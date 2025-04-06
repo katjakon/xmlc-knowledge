@@ -1,20 +1,60 @@
-import numpy as np
-import faiss  
+import faiss
+from sentence_transformers import SentenceTransformer
 
-d = 64                           # dimension of embeddings.  
-M = 32                           # dimension, higher more accurate but more memory.
-nb = 100000                      # database size, should be n_labels.
-nq = 10000                       # nb of queries, should be n_docs
-np.random.seed(1234)             # make reproducible
+class Retriever:
 
-# Replace this by some pre-trained representations of labels.
-xb = np.random.random((nb, d)).astype('float32')
-xb[:, 0] += np.arange(nb) / 1000.
-xq = np.random.random((nq, d)).astype('float32')
-xq[:, 0] += np.arange(nq) / 1000.
+    def __init__(self, retriever_model, M=200, device=None) -> None:
+        self.retriever = SentenceTransformer(retriever_model)
+        if device is not None:
+            self.retriever.to(device)
+        self.dim = self.retriever.get_sentence_embedding_dimension()
+        self.M = M
+    
+    def retrieve(self, mapping, labels, texts, top_k=10, batch_size=256):
+        """
+        labels: list of strings
+        mapping: dict
+        texts: list of strings
+        top_k: int
+        batch_size: int
 
-# make faiss available
-index = faiss.IndexHNSWFlat(d, M)   # build the index
-print(index.is_trained)
-index.add(xb)                  # add vectors to the index
-print(index.ntotal)
+        Returns:
+        similarity: np.ndarray of shape (len(texts), top_k)
+        indices: np.ndarray of shape (len(texts), top_k)
+        """
+        index = faiss.IndexHNSWFlat(self.dim, self.M)
+        label_embeddings = self.retriever.encode(labels, show_progress_bar=True, batch_size=batch_size)
+        text_embeddings = self.retriever.encode(texts, show_progress_bar=True, batch_size=batch_size)
+        index.add(label_embeddings)
+        similarity, indices = index.search(text_embeddings, top_k)
+        label_idn = [list(map(lambda idx: mapping[idx], top_indices)) for top_indices in indices]
+        return similarity, label_idn
+    
+    def get_neighbors(self, list_idns, graph, k, relation=None):
+        retrieved_labels_plus = []
+        for top_labels in list_idns:
+            extended_labels = set()
+            for label_idn in top_labels:
+                extended_labels.add(label_idn)
+                neighbors = k_hop_neighbors(graph, label_idn, k, relation)
+                extended_labels.update(neighbors)
+            retrieved_labels_plus.append(list(extended_labels))
+        return retrieved_labels_plus
+    
+    def retrieve_with_neighbors(self, graph, mapping, labels, texts, k=2, top_k=10, batch_size=256, relation=None):
+        """
+        graph: networkx.Graph
+        mapping: dict
+        labels: list of strings
+        texts: list of strings
+        k: int
+        top_k: int
+        batch_size: int
+
+        Returns:
+        retrieved_labels_plus: list of list of strings
+        """
+        _, idns = self._retrieve(labels, texts, top_k, batch_size)
+        retrieved_labels_plus = self.get_neighbors(idns, graph, mapping, k, relation)
+        return retrieved_labels_plus
+                

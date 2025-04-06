@@ -6,6 +6,7 @@ from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.processing_utils import Unpack
 from transformers.modeling_attn_mask_utils import AttentionMaskConverter
 from transformers.models.llama.modeling_llama import (
+    KwargsForCausalLM,
     LlamaRMSNorm,
     LlamaRotaryEmbedding,
     LlamaDecoderLayer,
@@ -17,39 +18,27 @@ from transformers.modeling_outputs import (
     CausalLMOutputWithPast
 )
 from transformers.utils import logging
-
 import torch
+from torch.nn import CrossEntropyLoss
 import torch.nn as nn
 
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+from prompt_generators import RandomPromptGenerator, HiddenStatePromptGenerator
 
 logger = logging.get_logger(__name__)
 
-PROMPT_LEN = 3
-LAYER = 13
 
-class PromptGenerator:
-    # TODO: Generates a prompt to be prepended to the hidden layers.
-    def __init__(self, prompt_len, dim) -> None:
-        self.prompt_len = prompt_len
-        self.dim = dim
-        self.batch_size = 1
+class BasePromptLlama(LlamaPreTrainedModel):
 
-    def generate_prefix(self):
-        # from the documentation:
-        # Tuple of tuple(torch.FloatTensor) of length config.n_layers, with each tuple having 2 tensors of shape (batch_size, num_heads, sequence_length, embed_size_per_head)).
-        size = (self.batch_size, self.prompt_len, self.dim)
-        prefix = torch.randn(size)
-        return prefix
-
-class PromptLlama(LlamaPreTrainedModel):
-
-    def __init__(self, config: LlamaConfig, prompt: PromptGenerator):
+    def __init__(self, config: LlamaConfig, prompt_config: dict):
         super().__init__(config)
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
-        self.prompt_gen = prompt
+        self.prompt_config = prompt_config
+        self.num_prompt_tokens = prompt_config["num_prompt_tokens"]
+        self.at_layer = prompt_config["at_layer"]
+        self.prompt_generator = None
+
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList(
@@ -62,6 +51,30 @@ class PromptLlama(LlamaPreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
     
+    def add_prompt(self):
+        """Initialize the prompt generator."""
+        if self.prompt_config["type"] == "random":
+            self.prompt_generator = RandomPromptGenerator(config=self.prompt_config)
+            self.prompt_generator.to(self.embed_tokens.weight.device)
+        elif self.prompt_config["type"] == "hidden_states":
+            self.prompt_generator = HiddenStatePromptGenerator(config=self.prompt_config)
+            self.prompt_generator.to(self.embed_tokens.weight.device)
+        else:
+            raise ValueError(f"Unknown prompt type: {self.prompt_config['type']}")
+        return self.prompt_generator
+    
+    def call_prompt(self, hidden_states=None):
+        """Call the prompt generator."""
+        if self.prompt_generator is None:
+            raise ValueError("Prompt generator not initialized. Call `add_prompt()` first.")
+        if self.prompt_config["type"] == "random":
+            prefix = self.prompt_generator()
+            prefix = prefix.unsqueeze(0).expand(hidden_states.shape[0], -1, -1)
+        elif self.prompt_config["type"] == "hidden_states":
+            prefix = self.prompt_generator(hidden_states=hidden_states)
+            # prefix = prefix.unsqueeze(1).expand(-1, hidden_states.shape[1], -1)
+        return prefix
+
 
     def forward(
             self,
@@ -107,23 +120,12 @@ class PromptLlama(LlamaPreTrainedModel):
 
             if position_ids is None:
                 position_ids = cache_position.unsqueeze(0)
-
-            # TODO: determine batch size?
-            prompt_attention_mask = torch.ones(1, PROMPT_LEN).to(attention_mask.device)
-            prompt_attention_mask[0][0] = 0
-            # prompt_attention_mask = prompt_attention_mask[:, None, None, :]
-            # prompt_attention_mask = prompt_attention_mask.to(dtype=self.dtype)
-            # prompt_attention_mask =  (1.0 - prompt_attention_mask) * -10000.0
-
-            # print(attention_mask)
-            # attention_mask = attention_mask[:, None, None, :]
-            # attention_mask = attention_mask.to(dtype=self.dtype)
-            # attention_mask =  (1.0 - attention_mask) * -10000.0
-
+            batch_size = inputs_embeds.shape[0]
+            prompt_attention_mask = torch.ones(batch_size, self.num_prompt_tokens).to(attention_mask.device)
+            
             causal_mask = self._update_causal_mask(
                 attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
             )
-            print(causal_mask)
 
             hidden_states = inputs_embeds
 
@@ -134,21 +136,25 @@ class PromptLlama(LlamaPreTrainedModel):
             all_hidden_states = () if output_hidden_states else None
             all_self_attns = () if output_attentions else None
 
-            for idx, decoder_layer in enumerate(self.layers[: self.config.num_hidden_layers]):
-                print("LAYERS", idx)    
+            for idx, decoder_layer in enumerate(self.layers[: self.config.num_hidden_layers]):  
                 if output_hidden_states:
                     all_hidden_states += (hidden_states,)
-                print(hidden_states.shape)
-                if idx == LAYER: # Layer where prompt is prepended.
-                    prefix = self.prompt_gen.generate_prefix()
-                    # print(prefix.shape, hidden_states.shape)
+
+                if idx == self.at_layer and self.prompt_generator is not None: # Layer where prompt is prepended.
+                    prefix = self.call_prompt(hidden_states=hidden_states)
                     hidden_states = torch.cat((prefix, hidden_states), dim=1)
-                    # print("HIDDEN STATES", hidden_states.shape) 
-                    # print(prompt_attention_mask.shape, attention_mask.shape)
                     attention_mask = torch.cat([prompt_attention_mask, attention_mask], dim=-1)
-                    causal_mask =  self._update_causal_mask(
-                attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
-            )
+                    cache_position = torch.arange(
+                    0, 
+                    hidden_states.shape[1], 
+                    device=inputs_embeds.device
+                )
+                    
+                    if self.training:
+                        causal_mask =  self._update_causal_mask(
+                            attention_mask, hidden_states, cache_position, past_key_values, output_attentions
+                            )       
+                        causal_mask[:, :, :, :self.num_prompt_tokens] = 0
                     position_ids = torch.arange(hidden_states.shape[1], device=hidden_states.device).unsqueeze(0)
                     position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
@@ -165,6 +171,8 @@ class PromptLlama(LlamaPreTrainedModel):
                         position_embeddings,
                     )
                 else:
+                    if not self.training:
+                        causal_mask = None
                     layer_outputs = decoder_layer(
                         hidden_states,
                         attention_mask=causal_mask,
@@ -316,16 +324,80 @@ class PromptLlama(LlamaPreTrainedModel):
                 causal_mask[:, :, :, :mask_length] = causal_mask[:, :, :, :mask_length].masked_fill(
                     padding_mask, min_dtype
                 )
+        
+        return causal_mask
 
-if __name__ == "__main__":
-    model_name = "meta-llama/Llama-3.2-1B"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    config = AutoConfig.from_pretrained(model_name)
-    prompt_gen = PromptGenerator(prompt_len=PROMPT_LEN, dim=config.hidden_size)
-    promp_llama = PromptLlama.from_pretrained(model_name, prompt=prompt_gen)
-    text = "Das ist ein Test: "
-    tok_out = tokenizer(text, return_tensors="pt")
-    input_ids = tok_out["input_ids"]
-    attention_mask = tok_out["attention_mask"]
+class GenerativePromptLlama(LlamaForCausalLM):
 
-    promp_llama(input_ids, attention_mask=attention_mask)
+    def __init__(self, config, prompt_config):
+        super().__init__(config)
+        self.model = BasePromptLlama(config, prompt_config)
+        self.vocab_size = config.vocab_size
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.prompt_config = prompt_config
+        self.num_prompt_tokens = prompt_config["num_prompt_tokens"]
+
+        # Initialize weights and apply final processing
+        self.post_init()
+    
+    def forward(
+            self,
+            input_ids: torch.LongTensor = None,
+            attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.LongTensor] = None,
+            past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+            inputs_embeds: Optional[torch.FloatTensor] = None,
+            labels: Optional[torch.LongTensor] = None,
+            use_cache: Optional[bool] = None,
+            output_attentions: Optional[bool] = None,
+            output_hidden_states: Optional[bool] = None,
+            return_dict: Optional[bool] = None,
+            cache_position: Optional[torch.LongTensor] = None,
+            logits_to_keep: Union[int, torch.Tensor] = 0,
+            **kwargs: Unpack[KwargsForCausalLM],
+        ) -> Union[Tuple, CausalLMOutputWithPast]:
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=False,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            cache_position=cache_position,
+            **kwargs,
+        )
+
+        hidden_states = outputs[0]
+        # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
+        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+        logits = self.lm_head(hidden_states[:, slice_indices, :])
+
+        loss = None
+
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., self.num_prompt_tokens :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return (loss,) + output if loss is not None else output
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
