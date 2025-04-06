@@ -11,6 +11,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 from safetensors import safe_open
+import wandb
 import yaml
 
 from utils import init_prompt_model, get_pref_label, strip_uri, tokenize
@@ -18,13 +19,14 @@ from prompt_str import SUFFIX_PROMPT, PREFIX_PROMPT
 
 logger = getLogger(__name__)
 
+
 class Trainer:
 
     def __init__(self, config) -> None:
         self.config = config
         self.model_name = config["model_name"]
         self.prompt_config = config["prompt_config"]
-        self.device = "cpu" #"cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda:1" if torch.cuda.is_available() else "cpu"
 
     def load_checkpoint(self, checkpoint_path, config, device):
         prompt_config = config["prompt_config"]
@@ -49,24 +51,17 @@ class Trainer:
         eval_loss = 0
         for batch in tqdm(eval_dataloader, desc="Evaluating", leave=False):
             with torch.no_grad():
+                batch = {k: v.to(self.device) for k, v in batch.items()}
                 outputs = model(**batch)
                 eval_loss += outputs.loss.item()
         eval_loss /= len(eval_dataloader)
+        wandb.log({"eval_loss": eval_loss})
         print(f"\nEval Loss: {eval_loss}")
         model.train()
         return eval_loss
     
-    def generate(self, model, example):
-        model.eval()
-        print(example["label_list"])
-        text = PREFIX_PROMPT + example["title"] + SUFFIX_PROMPT
-        tok_out = tokenizer(text, return_tensors="pt")
-        output = model.generate(input_ids=tok_out["input_ids"], max_new_tokens=20)
-        print(tokenizer.decode(output[0], skip_special_tokens=True))
-        model.train()
-    
     def train(self, model, train_dataset, eval_dataset, output_dir):
-        model = model.to(self.device)
+        model.to(self.device)
         tensor_train_dataset = train_dataset.select_columns(["input_ids", "attention_mask", "labels"]).with_format("torch")
         tensor_eval_dataset = eval_dataset.select_columns(["input_ids", "attention_mask", "labels"]).with_format("torch")
 
@@ -78,8 +73,9 @@ class Trainer:
         num_epochs = self.config["num_epochs"]
         log_steps = self.config["logging_steps"]
         eval_steps = self.config["eval_steps"]
+        save_steps = self.config["save_steps"]
         max_norm = self.config["max_grad_norm"]
-        lr = self.config["learning_rate"]
+        lr = float(self.config["learning_rate"])
         total_steps = len(train_dataloader) * num_epochs
 
         # Create optimizer and scheduler
@@ -90,6 +86,7 @@ class Trainer:
         for epoch in range(num_epochs):
             model.train()
             for batch in tqdm(train_dataloader, desc=f"Epoch {epoch + 1}/{num_epochs}", leave=False):
+                batch = {k: v.to(self.device) for k, v in batch.items()}
                 optimizer.zero_grad()
                 outputs = model(**batch)
                 loss = outputs.loss
@@ -101,12 +98,14 @@ class Trainer:
                 if global_step % log_steps == 0:
                     # get current lr
                     lr = scheduler.get_last_lr()[0]
+                    wandb.log({"loss": loss.item(), "learning_rate": lr})
                     print(f"\nStep {global_step}: Loss {loss.item()} Learning Rate {lr}")
                 if global_step % eval_steps == 0:
-                    example = eval_dataset[0]
-                    self.generate(model, example)
                     self.evaluate(model, eval_dataloader)
                 global_step += 1
+                if global_step % save_steps == 0:
+                    self.save_checkpoint(model, os.path.join(output_dir, f"checkpoint-{global_step}"))
+        wandb.finish()
 
 
 
@@ -127,10 +126,10 @@ if __name__ == "__main__":
     print(data_df.head())
 
     # Subsample the dataset
-    number = 5_000
-    eval_number = 10
-    data_df = data_df.sample(number)
-    eval_df = eval_df.sample(eval_number)
+    number = 300_000
+    eval_number = 3000
+    data_df = data_df.sample(number, random_state=42)
+    eval_df = eval_df.sample(eval_number, random_state=42)
 
     train_ds = Dataset.from_pandas(data_df)
     eval_ds = Dataset.from_pandas(eval_df)
@@ -147,10 +146,20 @@ if __name__ == "__main__":
     train_ds = train_ds.map(lambda x: tokenize(x, tokenizer, max_length=max_seq_length, suffix=SUFFIX_PROMPT, prefix=PREFIX_PROMPT))
     eval_ds = eval_ds.map(lambda x: tokenize(x, tokenizer, max_length=max_seq_length, suffix=SUFFIX_PROMPT, prefix=PREFIX_PROMPT))
 
+    wandb.init(
+      # Set the project where this run will be logged
+      project="xmlc-knowledge",
+      # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
+      name=f"tmp-{model_name}",
+      # Track hyperparameters and run metadata
+      config={
+          "model_name": model_name,
+          "config": config,
+          "n_train": number,
+      })
 
     # # Initialize the trainer
     trainer = Trainer(config)
-
     output_dir = "checkpoints"
     if output_dir not in os.listdir():
         os.mkdir(output_dir)
