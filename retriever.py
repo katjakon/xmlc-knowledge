@@ -1,5 +1,6 @@
 import faiss
 from sentence_transformers import SentenceTransformer
+from utils import k_hop_neighbors
 
 class Retriever:
 
