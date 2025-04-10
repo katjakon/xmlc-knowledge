@@ -11,7 +11,7 @@ class Retriever:
         self.dim = self.retriever.get_sentence_embedding_dimension()
         self.M = M
     
-    def retrieve(self, mapping, labels, texts, top_k=10, batch_size=256):
+    def retrieve(self, mapping, labels, texts, top_k=10, batch_size=256, index=None):
         """
         labels: list of strings
         mapping: dict
@@ -23,13 +23,21 @@ class Retriever:
         similarity: np.ndarray of shape (len(texts), top_k)
         indices: np.ndarray of shape (len(texts), top_k)
         """
-        index = faiss.IndexHNSWFlat(self.dim, self.M)
-        label_embeddings = self.retriever.encode(labels, show_progress_bar=True, batch_size=batch_size)
-        text_embeddings = self.retriever.encode(texts, show_progress_bar=True, batch_size=batch_size)
-        index.add(label_embeddings)
+        if index is None:
+            index = faiss.IndexHNSWFlat(self.dim, self.M)
+            label_embeddings = self.retriever.encode(labels, show_progress_bar=True, batch_size=batch_size)
+            index.add(label_embeddings)
+
+        text_embeddings = self.retriever.encode(texts, show_progress_bar=False, batch_size=batch_size)
         similarity, indices = index.search(text_embeddings, top_k)
         label_idn = [list(map(lambda idx: mapping[idx], top_indices)) for top_indices in indices]
         return similarity, label_idn
+    
+    def fit(self, labels, batch_size=256):
+        index = faiss.IndexHNSWFlat(self.dim, self.M)
+        label_embeddings = self.retriever.encode(labels, show_progress_bar=True, batch_size=batch_size)
+        index.add(label_embeddings)
+        return index
     
     def get_neighbors(self, list_idns, graph, k, relation=None):
         retrieved_labels_plus = []

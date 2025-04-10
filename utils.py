@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoTokenizer
 import torch
 
 from llama_prompt import GenerativePromptLlama
@@ -98,6 +98,32 @@ def tokenize(record, tokenizer, max_length=None, sep_token=", ", suffix="", pref
     labels = torch.tensor(labels)
     full_attention_mask = torch.tensor(full_attention_mask)
     return {"input_ids": full_ids, "labels": labels, "attention_mask": full_attention_mask}
+
+def inference_tokenize(record, tokenizer, max_length=None, suffix="", prefix=""):
+
+    prefix_tok_out = tokenizer(prefix, add_special_tokens=False)
+    suffix_tok_out = tokenizer(suffix, add_special_tokens=False)
+
+    # Truncate the prompt if it's too long. Subtract 2 for the [BOS] and [EOS] tokens.
+    trunc_len = max_length - len(prefix_tok_out["input_ids"]) - len(suffix_tok_out["input_ids"]) - 2
+    if trunc_len <= 0:
+        raise ValueError("Input is too long. Increase max_length.")
+    prompt_tok_out = tokenizer(record["title"], add_special_tokens=False, truncation=True, max_length=trunc_len)
+    
+    # Add special tokens
+    input_ids = [tokenizer.bos_token_id] + prefix_tok_out["input_ids"] + prompt_tok_out["input_ids"] + suffix_tok_out["input_ids"]
+
+    len_text = len(input_ids)
+    padding_length = max_length - len_text
+    full_ids = input_ids
+    full_ids = full_ids + [tokenizer.pad_token_id] * padding_length # Pad to max_length.
+    full_attention_mask = [1] * len_text + [0] * padding_length # Mask padding tokens.
+
+    # Convert to tensors
+    full_ids = torch.tensor(full_ids)
+    full_attention_mask = torch.tensor(full_attention_mask)
+    return {"input_ids": full_ids, "attention_mask": full_attention_mask}
+
 
 def init_prompt_model(model_name, prompt_config):
     tokenizer = AutoTokenizer.from_pretrained(model_name)

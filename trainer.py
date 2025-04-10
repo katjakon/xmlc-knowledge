@@ -126,8 +126,8 @@ if __name__ == "__main__":
     print(data_df.head())
 
     # Subsample the dataset
-    number = 300_000
-    eval_number = 3000
+    number = 150_000
+    eval_number = 1500
     data_df = data_df.sample(number, random_state=42)
     eval_df = eval_df.sample(eval_number, random_state=42)
 
@@ -150,7 +150,7 @@ if __name__ == "__main__":
       # Set the project where this run will be logged
       project="xmlc-knowledge",
       # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
-      name=f"tmp-{model_name}",
+      name=f"baseline-{model_name}",
       # Track hyperparameters and run metadata
       config={
           "model_name": model_name,
