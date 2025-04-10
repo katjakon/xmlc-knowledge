@@ -169,3 +169,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+data/
+.dvc/
+/GND-Subjects-all.json
+/ki-gnd.csv
+/map_idn_with_nid.csv
+/DUMP_subjects_plus.dat
+/nid_list_all.csv
+/gnd_freq-used-meta-data.arrow
