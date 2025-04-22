@@ -1,0 +1,5 @@
+outs:
+- md5: c53bbe604b605ab152749a970a353231
+  size: 70495107
+  hash: md5
+  path: GND-Subjects-plus.ttl
