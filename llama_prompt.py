@@ -63,7 +63,7 @@ class BasePromptLlama(LlamaPreTrainedModel):
             raise ValueError(f"Unknown prompt type: {self.prompt_config['type']}")
         return self.prompt_generator
     
-    def call_prompt(self, hidden_states=None):
+    def call_prompt(self, hidden_states=None, seq_lengths=None):
         """Call the prompt generator."""
         if self.prompt_generator is None:
             raise ValueError("Prompt generator not initialized. Call `add_prompt()` first.")
@@ -71,7 +71,7 @@ class BasePromptLlama(LlamaPreTrainedModel):
             prefix = self.prompt_generator()
             prefix = prefix.unsqueeze(0).expand(hidden_states.shape[0], -1, -1)
         elif self.prompt_config["type"] == "hidden_states":
-            prefix = self.prompt_generator(hidden_states=hidden_states)
+            prefix = self.prompt_generator(hidden_states=hidden_states, seq_lengths=seq_lengths)
             # prefix = prefix.unsqueeze(1).expand(-1, hidden_states.shape[1], -1)
         return prefix
 
@@ -80,6 +80,7 @@ class BasePromptLlama(LlamaPreTrainedModel):
             self,
             input_ids: torch.LongTensor = None,
             attention_mask: Optional[torch.Tensor] = None,
+            seq_lengths: Optional[torch.LongTensor] = None,
             position_ids: Optional[torch.LongTensor] = None,
             past_key_values: Optional[Cache] = None,
             inputs_embeds: Optional[torch.FloatTensor] = None,
@@ -141,7 +142,7 @@ class BasePromptLlama(LlamaPreTrainedModel):
                     all_hidden_states += (hidden_states,)
 
                 if idx == self.at_layer and self.prompt_generator is not None: # Layer where prompt is prepended.
-                    prefix = self.call_prompt(hidden_states=hidden_states)
+                    prefix = self.call_prompt(hidden_states=hidden_states, seq_lengths=seq_lengths)
                     hidden_states = torch.cat((prefix, hidden_states), dim=1)
                     attention_mask = torch.cat([prompt_attention_mask, attention_mask], dim=-1)
                     cache_position = torch.arange(
@@ -345,6 +346,7 @@ class GenerativePromptLlama(LlamaForCausalLM):
             input_ids: torch.LongTensor = None,
             attention_mask: Optional[torch.Tensor] = None,
             position_ids: Optional[torch.LongTensor] = None,
+            seq_lengths: Optional[torch.LongTensor] = None,
             past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
             inputs_embeds: Optional[torch.FloatTensor] = None,
             labels: Optional[torch.LongTensor] = None,
@@ -366,6 +368,7 @@ class GenerativePromptLlama(LlamaForCausalLM):
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
+            seq_lengths=seq_lengths,
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
