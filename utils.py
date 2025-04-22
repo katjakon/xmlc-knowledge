@@ -1,7 +1,13 @@
+import re
+
 from transformers import AutoTokenizer
 import torch
+from safetensors import safe_open
 
 from llama_prompt import GenerativePromptLlama
+
+PAD_TOKEN = "<|finetune_right_pad_id|>"
+EOT_TOKEN = "<|eot_id|>"
 
 def strip_uri(uris, prefix="<http://d-nb.info/gnd/", suffix=">"):
     uris = uris.split()
@@ -70,18 +76,30 @@ def f1_at_k(y_true, y_pred, k):
         return 0
     return 2 * (precision * recall) / (precision + recall)
 
-def tokenize(record, tokenizer, max_length=None, sep_token=", ", suffix="", prefix=""):
+def process_output(text, sep_token=","):
+    pattern = r"\d+[.)]"
+    text = re.sub(pattern, "", text)
+    sep_tokens = r"[,;-]"
+    text = re.split(sep_tokens, text)
+    text = [x.strip() for x in text]
+    if len(text) == 1:
+        text = text[0].split(" ")
+    return [keyword for keyword in text if keyword]
 
+def tokenize(record, tokenizer, max_length=512, suffix="", prefix=""):
+
+    label_str = record["label-string"]
+    title = record["title"]
     prefix_tok_out = tokenizer(prefix, add_special_tokens=False)
     suffix_tok_out = tokenizer(suffix, add_special_tokens=False)
-    target_tok_out = tokenizer(sep_token.join(record["label_list"]), add_special_tokens=False)
+    prompt_tok_out = tokenizer(record["title"], add_special_tokens=False, truncation=True, max_length=75)
 
     # Truncate the prompt if it's too long. Subtract 2 for the [BOS] and [EOS] tokens.
-    trunc_len = max_length - len(prefix_tok_out["input_ids"]) - len(suffix_tok_out["input_ids"]) - len(target_tok_out["input_ids"]) - 2
+    trunc_len = max_length - len(prefix_tok_out["input_ids"]) - len(suffix_tok_out["input_ids"]) - len(prompt_tok_out["input_ids"]) - 2
     if trunc_len <= 0:
-        raise ValueError("Input is too long. Increase max_length.")
-    prompt_tok_out = tokenizer(record["title"], add_special_tokens=False, truncation=True, max_length=trunc_len)
-    
+        raise ValueError(f"Input '{title}' is too long ({-trunc_len}). Increase max_length.")
+    target_tok_out = tokenizer(label_str, add_special_tokens=False, truncation=True, max_length=trunc_len)
+
     # Add special tokens
     input_ids = [tokenizer.bos_token_id] + prefix_tok_out["input_ids"] + prompt_tok_out["input_ids"] + suffix_tok_out["input_ids"]
     target_ids = target_tok_out["input_ids"] + [tokenizer.eos_token_id]
@@ -97,9 +115,9 @@ def tokenize(record, tokenizer, max_length=None, sep_token=", ", suffix="", pref
     full_ids = torch.tensor(full_ids)
     labels = torch.tensor(labels)
     full_attention_mask = torch.tensor(full_attention_mask)
-    return {"input_ids": full_ids, "labels": labels, "attention_mask": full_attention_mask}
+    return {"input_ids": full_ids, "labels": labels, "attention_mask": full_attention_mask, "seq_lengths": len(input_ids)}
 
-def inference_tokenize(record, tokenizer, max_length=None, suffix="", prefix=""):
+def inference_tokenize(record, tokenizer, max_length=512, suffix="", prefix=""):
 
     prefix_tok_out = tokenizer(prefix, add_special_tokens=False)
     suffix_tok_out = tokenizer(suffix, add_special_tokens=False)
@@ -113,25 +131,44 @@ def inference_tokenize(record, tokenizer, max_length=None, suffix="", prefix="")
     # Add special tokens
     input_ids = [tokenizer.bos_token_id] + prefix_tok_out["input_ids"] + prompt_tok_out["input_ids"] + suffix_tok_out["input_ids"]
 
-    len_text = len(input_ids)
-    padding_length = max_length - len_text
-    full_ids = input_ids
-    full_ids = full_ids + [tokenizer.pad_token_id] * padding_length # Pad to max_length.
-    full_attention_mask = [1] * len_text + [0] * padding_length # Mask padding tokens.
+    len_text = len(input_ids) 
+    full_ids = input_ids 
+    full_attention_mask = [1] * len_text 
 
     # Convert to tensors
     full_ids = torch.tensor(full_ids)
     full_attention_mask = torch.tensor(full_attention_mask)
-    return {"input_ids": full_ids, "attention_mask": full_attention_mask}
+    return {"input_ids": full_ids, "attention_mask": full_attention_mask, "seq_lengths": len(input_ids)}
 
 
-def init_prompt_model(model_name, prompt_config):
+def init_prompt_model(model_name, prompt_config, tune_lm_head=True):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids("<|finetune_right_pad_id|>") # Ensure padding token is the same as EOS token
+    tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN) 
     model = GenerativePromptLlama.from_pretrained(model_name, prompt_config=prompt_config)
     for param in model.parameters():
         param.requires_grad = False
+    if tune_lm_head: 
+        for param in model.lm_head.parameters():
+            param.requires_grad = True
+    for param in model.lm_head.parameters():
+        param.requires_grad = True
     model.model.add_prompt()
     return model, tokenizer
 
+def load_model(checkpoint_path, config, device, data_parallel=False):
+    prompt_config = config["prompt_config"]
+    model_name = config["model_name"]
+    model, tokenizer = init_prompt_model(model_name, prompt_config)
+    tensors = {}
+    with safe_open(checkpoint_path, framework="pt", device=device) as f:
+        for k in f.keys():
+            tensors[k] = f.get_tensor(k)
+    incompatible_keys = model.load_state_dict(tensors, strict=False)
+    # Missing keys are expected since we only tune a fraction of the model.
+    # Unexpected keys should be reported.
+    if len(incompatible_keys.unexpected_keys) > 0: 
+        raise ValueError(f"Unexpected keys in state_dict: {incompatible_keys.unexpected_keys}")
+    if data_parallel:
+        model = torch.nn.DataParallel(model)
+    return model, tokenizer
 
