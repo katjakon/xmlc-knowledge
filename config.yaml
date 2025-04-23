@@ -12,7 +12,7 @@ max_seq_length: 200
 eval_steps: 100
 logging_steps: 10
 save_steps: 1000
-eval_generation: false
+eval_generation: true
 train_subsample_ratio: 0.001
 validate_subsample_ratio: 0.01
 sort_by_freq: true
