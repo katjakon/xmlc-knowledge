@@ -1,0 +1,14 @@
+md5: f29b72eb88df639544482aa35b19bfbe
+frozen: true
+deps:
+- path: corpora/title
+  repo:
+    url: git@gitlab.prod.jason.dnb.de:aen/ki-tfidf-dataset.git
+    rev_lock: ec9b755a6334c3232d82a051df65ecc45d9bad53
+    remote: evalaenki1
+outs:
+- md5: c08eb48c6efd58d2603c3ea56f5120cb.dir
+  size: 9044696206
+  nfiles: 26
+  hash: md5
+  path: title
