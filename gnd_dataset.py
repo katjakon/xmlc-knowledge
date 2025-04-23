@@ -1,5 +1,4 @@
 import os
-import pickle
 from typing import List, Dict, Any
 
 from datasets import Dataset
@@ -26,7 +25,7 @@ class GNDDataset:
 
         Args:
             data_dir (str): The directory where the GND dataset is stored.
-            gnd_graph (str): The path to the GND graph file (pickle).
+            gnd_graph (networkx): GND graph file (network x object.).
 
         """
         super().__init__()
@@ -34,7 +33,7 @@ class GNDDataset:
         self.config = config
         self.sort_by_freq = bool(self.config["sort_by_freq"]) # Sort labels by frequency
         self.use_k_freq_labels = int(self.config["use_k_freq_labels"]) # Only use k most frequent labels
-        self.gnd_graph = pickle.load(open(gnd_graph, "rb"))
+        self.gnd_graph = gnd_graph
         if load_from_disk:
             self.dataset = self.load_from_disk(self.data_dir)
         else:
@@ -150,6 +149,31 @@ class GNDDataset:
                 continue
             dataset = dataset.map(
                 lambda x: tokenize
+                (
+                    x, 
+                    tokenizer, 
+                    max_length=self.config["max_seq_length"], 
+                    suffix=SUFFIX_PROMPT, 
+                    prefix=PREFIX_PROMPT
+                ))
+            self.dataset[split] = dataset
+    
+    def inference_tokenize_datasets(self, tokenizer, splits=None):
+        """
+        Tokenizes the datasets using the provided tokenizer for inference.
+
+        Args:
+            tokenizer: The tokenizer to use for tokenization.
+            splits (List[str], optional): List of dataset splits to tokenize. If None, all splits are tokenized.
+
+        Returns:
+            None
+        """
+        for split, dataset in self.dataset.items():
+            if splits is not None and split not in splits:
+                continue
+            dataset = dataset.map(
+                lambda x: inference_tokenize
                 (
                     x, 
                     tokenizer, 

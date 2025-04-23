@@ -2,6 +2,7 @@ import re
 
 from transformers import AutoTokenizer
 import torch
+from tqdm import tqdm
 from safetensors import safe_open
 
 from llama_prompt import GenerativePromptLlama
@@ -155,7 +156,7 @@ def init_prompt_model(model_name, prompt_config, tune_lm_head=True):
     model.model.add_prompt()
     return model, tokenizer
 
-def load_model(checkpoint_path, config, device, data_parallel=False):
+def load_model(checkpoint_path, config, device, data_parallel=True):
     prompt_config = config["prompt_config"]
     model_name = config["model_name"]
     model, tokenizer = init_prompt_model(model_name, prompt_config)
@@ -163,6 +164,8 @@ def load_model(checkpoint_path, config, device, data_parallel=False):
     with safe_open(checkpoint_path, framework="pt", device=device) as f:
         for k in f.keys():
             tensors[k] = f.get_tensor(k)
+    # Remove prefix "module." from keys.
+    tensors = {k.removeprefix("module."): v for k, v in tensors.items()}
     incompatible_keys = model.load_state_dict(tensors, strict=False)
     # Missing keys are expected since we only tune a fraction of the model.
     # Unexpected keys should be reported.
@@ -172,3 +175,44 @@ def load_model(checkpoint_path, config, device, data_parallel=False):
         model = torch.nn.DataParallel(model)
     return model, tokenizer
 
+def generate_predictions(model, tokenizer, dataset, device="cuda"):
+    model.eval()
+    predictions = []
+    for title_batch in tqdm(dataset, desc="Generating labels..."):
+        input_ids = torch.tensor(title_batch["input_ids"]).to(device).unsqueeze(0)
+        attention_mask = torch.tensor(title_batch["attention_mask"]).to(device).unsqueeze(0)
+        seq_lengths = torch.tensor(title_batch["seq_lengths"]).to(device).unsqueeze(0)
+        with torch.no_grad():
+            if isinstance(model, torch.nn.DataParallel):
+                gen_model = model.module
+            else:
+                gen_model = model
+            generated_ids = gen_model.generate(
+                input_ids=input_ids, 
+                attention_mask=attention_mask, 
+                seq_lengths=seq_lengths
+                )
+        len_input = len(input_ids[0])
+        generated_ids = generated_ids[0][len_input:] 
+        generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
+        predictions.append(generated_text)
+    return predictions
+
+def map_labels(prediction_list, index, retriever, label_mapping, label_strings):
+    mapped_predictions = []
+    for pred_list in tqdm(prediction_list, desc="Mapping predictions to GND labels"):
+        current_mapping = []
+        for pred in pred_list:
+            distance, idns = retriever.retrieve(
+                mapping=label_mapping,
+                labels=label_strings,
+                index=index,
+                texts=[pred],
+                top_k=1)
+            idn_sim = zip(idns[0], distance[0])
+            current_mapping.extend(idn_sim)
+        current_mapping = sorted(current_mapping, key=lambda x: x[1])
+        current_mapping = [x[0] for x in current_mapping]
+        current_mapping = list(set(current_mapping))
+        mapped_predictions.append(current_mapping)
+    return mapped_predictions

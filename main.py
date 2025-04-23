@@ -1,23 +1,34 @@
 import argparse
 import os
+import pickle
+import re
 import yaml
 
+import pandas as pd
+import torch
 import wandb
 
 from gnd_dataset import GNDDataset
 from trainer import Trainer
-from utils import init_prompt_model
+from retriever import Retriever
+from utils import init_prompt_model, generate_predictions, get_label_mapping, map_labels
 
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 parser = argparse.ArgumentParser(description="Train a model on the GND dataset.")
 parser.add_argument("--data_dir", type=str, help="Path to the GND dataset directory.")
 parser.add_argument("--gnd_graph", type=str, help="Path to the GND graph file (pickle).")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
+parser.add_argument("--result_dir", type=str, help="Path to the result directory.")
 
 arguments = parser.parse_args()
 data_dir = arguments.data_dir
 gnd_graph = arguments.gnd_graph
 config_path = arguments.config
+result_dir = arguments.result_dir
+
+# Load GND graph
+gnd_graph = pickle.load(open(gnd_graph, "rb"))
 
 # Load config 
 with open(config_path, "r") as f:
@@ -30,6 +41,8 @@ model, tokenizer = init_prompt_model(
     prompt_config=config["prompt_config"]
 )
 
+model = torch.nn.DataParallel(model)
+
 # Load GND dataset
 gnd_ds = GNDDataset(
     data_dir=data_dir,
@@ -38,7 +51,8 @@ gnd_ds = GNDDataset(
 )
 
 # Tokenize the datasets
-gnd_ds.tokenize_datasets(tokenizer=tokenizer)
+gnd_ds.tokenize_datasets(tokenizer=tokenizer, splits=["train", "validate"])
+gnd_ds.inference_tokenize_datasets(tokenizer=tokenizer, splits=["test"])
 
 # Split the dataset into train, validation, and test sets
 train_ds = gnd_ds["train"]
@@ -81,4 +95,52 @@ output_dir = config["checkpoint_path"]
 if output_dir not in os.listdir():
     os.mkdir(output_dir)
 trainer.train(model, train_ds, valid_ds, output_dir=output_dir)
-    
+
+test_ds = test_ds.select(range(100))  # Select a subset of the test dataset for evaluation
+
+raw_predictions = generate_predictions(
+    model=model,
+    tokenizer=tokenizer,
+    dataset=test_ds,
+    device=DEVICE
+)
+
+processed_predictions = []
+for pred_str in raw_predictions:
+    pred_str = re.split(r"[,;]", pred_str)  # Split by commas or semicolons
+    pred_str = [s.strip() for s in pred_str if s.strip()]  # Remove empty strings
+    processed_predictions.append(pred_str)
+
+
+# Map raw labels to GND labels
+label_strings, label_mapping = get_label_mapping(gnd_graph)
+
+retriever_model = config["sentence_transformer_model"]
+retriever = Retriever(
+    retriever_model=retriever_model,
+    device=DEVICE,
+)
+
+index = retriever.fit(labels=label_strings, batch_size=512)
+
+mapped_predictions = map_labels(
+    prediction_list=processed_predictions,
+    index=index,
+    retriever=retriever,
+    label_mapping=label_mapping,
+    label_strings=label_strings
+)
+
+
+pred_df = pd.DataFrame(
+    {
+        "predictions": mapped_predictions,
+        "raw_predictions": raw_predictions,
+        "label-ids": test_ds["label-idns"],
+        "label-names": test_ds["label-names"],
+        "label-strings": test_ds["label-string"],
+        "title": test_ds["title"],
+    }
+)
+
+pred_df.to_csv(os.path.join(result_dir, "predictions.csv"), index=False)

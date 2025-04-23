@@ -5,7 +5,7 @@ sentence_transformer_model: BAAI/bge-m3
 checkpoint_path: "testing"
 num_epochs: 1
 batch_size: 32
-learning_rate: 3e-5
+learning_rate: 5e-5
 warmup_rate: 0.05
 max_grad_norm: 1.0
 max_seq_length: 200
@@ -13,7 +13,7 @@ eval_steps: 100
 logging_steps: 10
 save_steps: 1000
 eval_generation: false
-train_subsample_ratio: 0.01
+train_subsample_ratio: 0.001
 validate_subsample_ratio: 0.01
 sort_by_freq: true
 use_k_freq_labels: 5

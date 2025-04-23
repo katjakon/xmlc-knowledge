@@ -11,7 +11,7 @@ from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 import wandb
 
-from utils import inference_tokenize, process_output
+from utils import inference_tokenize, process_output, generate_predictions
 from prompt_str import SUFFIX_PROMPT, PREFIX_PROMPT
 
 logger = getLogger(__name__)
@@ -47,42 +47,29 @@ class Trainer:
     def eval_generate(self, model, eval_dataset, sep_token="\n"):
         model.eval()
         model.pad_token_id = self.tokenizer.pad_token_id
+        predictions = generate_predictions(
+            model=model,
+            tokenizer=self.tokenizer,
+            dataset=eval_dataset,
+            device=self.device
+        )
         sims = []
         accs = []
-        for title_batch in tqdm(eval_dataset, desc="Evaluating generation...", leave=False):
-            with torch.no_grad():
-                input_ids = torch.tensor(title_batch["input_ids"]).to(self.device).unsqueeze(0)
-                attention_mask = torch.tensor(title_batch["attention_mask"]).to(self.device).unsqueeze(0)
-                seq_lengths = torch.tensor(title_batch["seq_lengths"]).to(self.device).unsqueeze(0)
-                labels = sep_token.join(title_batch["label_list"])
-                if isinstance(model, torch.nn.DataParallel):
-                    generated_ids = model.module.generate(
-                        input_ids=input_ids, 
-                        attention_mask=attention_mask, 
-                        seq_lengths=seq_lengths
-                        )
-                else:
-                    generated_ids = model.generate(
-                        input_ids=input_ids, 
-                        attention_mask=attention_mask, 
-                        seq_lengths=seq_lengths
-                        )
-                len_input = len(input_ids[0])
-                generated_ids = generated_ids[0][len_input:] 
-                generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
+        for i, pred_str in tqdm(enumerate(predictions), desc="Evaluating generation...", leave=False):
+                labels = eval_dataset[i]["label-string"]
+                label_list = eval_dataset[i]["label-names"]
                 # Process generated text
-                gen_embedding = self.similarity_model.encode(generated_text, convert_to_tensor=True)
+                gen_embedding = self.similarity_model.encode(pred_str, convert_to_tensor=True)
                 label_embedding = self.similarity_model.encode(labels, convert_to_tensor=True)
                 similarity = self.similarity_model.similarity(gen_embedding, label_embedding)[0][0]
                 sims.append(similarity.item())
                 # Accuracy of predictions
-                pred_label = set(process_output(generated_text, sep_token))
-                gold_label = set(title_batch["label_list"])
+                pred_label = set(process_output(pred_str, sep_token))
+                gold_label = set(label_list)
                 correct = len(pred_label.intersection(gold_label))
                 total = len(gold_label)
                 accuracy = correct / total if total > 0 else 0
                 accs.append(accuracy)
-
         avg_similarity = mean(sims)
         avg_accuracy = mean(accs)
         model.train()
@@ -178,29 +165,29 @@ class Trainer:
                         print(f"Generation Accuracy: {gen_acc}")
                         if gen_sim > best_sim:
                             best_sim = gen_sim
-                            output_dir = os.path.join(output_dir, "best_model")
+                            check_path = os.path.join(output_dir, "best_model")
                             self.save_checkpoint(
                                 model=model, 
                                 scheduler=scheduler,
                                 optimizer=optimizer,
-                                output_dir=output_dir)
+                                output_dir=check_path)
                             print(f"Best model saved at step {global_step}")
                     else:
                         if eval_loss < best_eval_loss:
-                            output_dir = os.path.join(output_dir, "best_model")
+                            check_path = os.path.join(output_dir, "best_model")
                             self.save_checkpoint(
                                 model=model, 
                                 scheduler=scheduler,
                                 optimizer=optimizer,
-                                output_dir=output_dir)
+                                output_dir=check_path)
                             print(f"Best model saved at step {global_step}")
                 if global_step % save_steps == 0:
-                    output_dir = os.path.join(output_dir, f"checkpoint-{global_step}")
+                    check_path = os.path.join(output_dir, f"checkpoint-{global_step}")
                     self.save_checkpoint(
                                 model=model, 
                                 scheduler=scheduler,
                                 optimizer=optimizer,
-                                output_dir=output_dir)
+                                output_dir=check_path)
                 global_step += 1
         wandb.finish()
 
