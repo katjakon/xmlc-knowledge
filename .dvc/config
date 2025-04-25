@@ -4,3 +4,5 @@
     dir =  /srv/dvc-cache 
 ['remote "hpc-mirror-ki1"']
     url = ssh://aen@evalaenki1.dnb.de:/opt/dvc-storages/zih-mirror
+['remote "ki1-storage"']
+    url = ssh://aen@evalaenki1.dnb.de:/opt/dvc-storages/shared-storages

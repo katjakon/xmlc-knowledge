@@ -27,12 +27,30 @@ gnd_graph = arguments.gnd_graph
 config_path = arguments.config
 result_dir = arguments.result_dir
 
-# Load GND graph
-gnd_graph = pickle.load(open(gnd_graph, "rb"))
-
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
+
+exp_name = config["experiment_name"]
+
+output_dir = config["checkpoint_path"]
+output_dir = os.path.join(output_dir, exp_name)
+
+if os.path.exists(output_dir):
+    print(f"Output directory {output_dir} already exists. Please remove it or choose a different name.")
+    exit(1)
+
+os.makedirs(output_dir)
+
+res_dir = os.path.join(result_dir, exp_name)
+if os.path.exists(res_dir):
+    print(f"Result directory {res_dir} already exists. Please remove it or choose a different name.")
+    exit(1)
+
+os.makedirs(res_dir)
+
+# Load GND graph
+gnd_graph = pickle.load(open(gnd_graph, "rb"))
 
 model_name = config["model_name"]
 
@@ -80,7 +98,7 @@ num_tokens = config["prompt_config"]["num_prompt_tokens"]
 wandb.init(
       # Set the project where this run will be logged
       project="xmlc-knowledge",
-      name=f"{model_name}-{prompt_type}-l-{layer}-n-{num_tokens}",
+      name=f"{exp_name}",
       # Track hyperparameters and run metadata
       config={
           "model_name": model_name,
@@ -90,13 +108,14 @@ wandb.init(
       })
 
 trainer = Trainer(config)
-output_dir = config["checkpoint_path"]
+trainer.train(
+    model=model,
+    train_dataset=train_ds,
+    eval_dataset=valid_ds,
+    output_dir=output_dir,
+)
 
-if output_dir not in os.listdir():
-    os.mkdir(output_dir)
-trainer.train(model, train_ds, valid_ds, output_dir=output_dir)
-
-test_ds = test_ds.select(range(100))  # Select a subset of the test dataset for evaluation
+# test_ds = test_ds.select(range(100))  # Select a subset of the test dataset for evaluation
 
 raw_predictions = generate_predictions(
     model=model,
@@ -138,9 +157,8 @@ pred_df = pd.DataFrame(
         "raw_predictions": raw_predictions,
         "label-ids": test_ds["label-idns"],
         "label-names": test_ds["label-names"],
-        "label-strings": test_ds["label-string"],
         "title": test_ds["title"],
     }
 )
 
-pred_df.to_csv(os.path.join(result_dir, "predictions.csv"), index=False)
+pred_df.to_csv(os.path.join(res_dir, "predictions.csv"), index=False)
