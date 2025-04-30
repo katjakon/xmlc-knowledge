@@ -11,9 +11,8 @@ class Retriever:
         self.dim = self.retriever.get_sentence_embedding_dimension()
         self.M = M
     
-    def retrieve(self, mapping, labels, texts, top_k=10, batch_size=256, index=None):
+    def retrieve(self, mapping, index, texts, top_k=10, batch_size=256, ):
         """
-        labels: list of strings
         mapping: dict
         texts: list of strings
         top_k: int
@@ -23,10 +22,6 @@ class Retriever:
         similarity: np.ndarray of shape (len(texts), top_k)
         indices: np.ndarray of shape (len(texts), top_k)
         """
-        if index is None:
-            index = faiss.IndexHNSWFlat(self.dim, self.M)
-            label_embeddings = self.retriever.encode(labels, show_progress_bar=True, batch_size=batch_size)
-            index.add(label_embeddings)
 
         text_embeddings = self.retriever.encode(texts, show_progress_bar=False, batch_size=batch_size)
         similarity, indices = index.search(text_embeddings, top_k)
@@ -50,11 +45,11 @@ class Retriever:
             retrieved_labels_plus.append(list(extended_labels))
         return retrieved_labels_plus
     
-    def retrieve_with_neighbors(self, graph, mapping, labels, texts, k=2, top_k=10, batch_size=256, relation=None):
+    def retrieve_with_neighbors(self, graph, mapping, index, texts, k=2, top_k=10, batch_size=256, relation=None):
         """
         graph: networkx.Graph
         mapping: dict
-        labels: list of strings
+        index : faiss.IndexHNSWFlat
         texts: list of strings
         k: int
         top_k: int
@@ -63,7 +58,12 @@ class Retriever:
         Returns:
         retrieved_labels_plus: list of list of strings
         """
-        _, idns = self._retrieve(labels, texts, top_k, batch_size)
-        retrieved_labels_plus = self.get_neighbors(idns, graph, mapping, k, relation)
+        _, idns = self.retrieve(
+            mapping=mapping,
+            texts=texts,
+            top_k=top_k,
+            batch_size=batch_size,
+            index=index)
+        retrieved_labels_plus = self.get_neighbors(idns, graph, k, relation)
         return retrieved_labels_plus
                 

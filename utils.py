@@ -60,24 +60,26 @@ def get_label_mapping(graph):
             label_mapping[idx] = node_id
     return label_strings, label_mapping
 
-def precision_at_k(y_true, y_pred, k):
-    y_pred = y_pred[:k]
+def precision_at_k(y_true, y_pred, k=None):
+    if k is not None:
+        y_pred = y_pred[:k]
     correct = len(set(y_true).intersection(set(y_pred)))
-    return correct / k
+    return correct / len(y_pred) if len(y_pred) > 0 else 0
 
-def recall_at_k(y_true, y_pred, k):
-    y_pred = y_pred[:k]
+def recall_at_k(y_true, y_pred, k=None):
+    if k is not None:
+        y_pred = y_pred[:k]
     correct = len(set(y_true).intersection(set(y_pred)))
     return correct / len(y_true)
 
-def f1_at_k(y_true, y_pred, k):
+def f1_at_k(y_true, y_pred, k=None):
     precision = precision_at_k(y_true, y_pred, k)
     recall = recall_at_k(y_true, y_pred, k)
     if precision + recall == 0:
         return 0
     return 2 * (precision * recall) / (precision + recall)
 
-def process_output(text, sep_token=","):
+def process_output(text):
     pattern = r"\d+[.)]"
     text = re.sub(pattern, "", text)
     sep_tokens = r"[,;-]"
@@ -205,7 +207,6 @@ def map_labels(prediction_list, index, retriever, label_mapping, label_strings):
         for pred in pred_list:
             distance, idns = retriever.retrieve(
                 mapping=label_mapping,
-                labels=label_strings,
                 index=index,
                 texts=[pred],
                 top_k=1)
