@@ -9,7 +9,7 @@ import torch
 
 from gnd_dataset import GNDDataset
 from retriever import Retriever
-from utils import get_label_mapping
+from utils import get_label_mapping, get_title_mapping
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -24,6 +24,8 @@ parser.add_argument("--index", type=str, help="Path to the index file.", default
 parser.add_argument("--label_mapping", type=str, help="Path to label mapping file", default=None)
 parser.add_argument("--hops", type=int, default=None, help="Number of hops for neighbors.")
 parser.add_argument("--relation", type=str, default=None, help="Relation for neighbors.")
+parser.add_argument("--alt_labels", type=bool, default=False, help="Use alternative labels for mapping.")
+parser.add_argument("--title_wise", type=bool, default=False, help="Use Title-to-Title mapping.")
 
 arguments = parser.parse_args()
 data_dir = arguments.data_dir
@@ -36,6 +38,8 @@ index_path = arguments.index
 label_mapping_path = arguments.label_mapping
 hops = arguments.hops
 relation = arguments.relation
+use_alt_labels = arguments.alt_labels
+use_title_wise = arguments.title_wise
 
 # Load config 
 with open(config_path, "r") as f:
@@ -48,6 +52,14 @@ if os.path.exists(result_dir):
     exit(1)
 os.makedirs(result_dir)
 
+# Load GND dataset
+gnd_ds = GNDDataset(
+    data_dir=data_dir,
+    gnd_graph=gnd_graph,
+    config=config
+)
+test_ds = gnd_ds["test"]
+train_ds = gnd_ds["train"]
 
 retriever_model = config["sentence_transformer_model"]
 retriever = Retriever(
@@ -59,43 +71,40 @@ retriever = Retriever(
 gnd_graph = pickle.load(open(gnd_graph, "rb"))
 if index_path is not None and label_mapping_path is not None:
     index = pickle.load(open(index_path, "rb"))
-    label_mapping = pickle.load(open(label_mapping_path, "rb"))
+    mapping = pickle.load(open(label_mapping_path, "rb"))
 else:
-    label_strings, label_mapping = get_label_mapping(gnd_graph)
-    index = retriever.fit(labels=label_strings, batch_size=batch_size)
-
-# Load GND dataset
-gnd_ds = GNDDataset(
-    data_dir=data_dir,
-    gnd_graph=gnd_graph,
-    config=config
-)
-
-test_ds = gnd_ds["test"]
+    if use_title_wise:
+        strings, mapping = get_title_mapping(train_ds)
+    else:
+        strings, mapping = get_label_mapping(gnd_graph, use_alt_labels=use_alt_labels)
+    index = retriever.fit(labels=strings, batch_size=batch_size)
 
 if hops is not None:
     idns = retriever.retrieve_with_neighbors(
         graph=gnd_graph,
-        mapping=label_mapping,
+        mapping=mapping,
         index=index,
         texts=test_ds["title"],
         k=hops,
         top_k=10,
         batch_size=batch_size,
-        relation=relation
+        relation=relation,
+        title_wise=use_title_wise,
     )
 else:
     sim, idns = retriever.retrieve(
-        mapping=label_mapping,
+        mapping=mapping,
         texts=test_ds["title"],
         top_k=10,
         batch_size=batch_size,
-        index=index)
+        index=index,
+        title_wise=use_title_wise,
+        )
 
 pred_df = pd.DataFrame(
     {
         "predictions": idns,
-        "label-ids": test_ds["label-idns"],
+        "label-ids": test_ds["label-ids"],
         "label-names": test_ds["label-names"],
         "title": test_ds["title"],
     }

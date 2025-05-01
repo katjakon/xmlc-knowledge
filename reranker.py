@@ -62,6 +62,8 @@ class BGEReranker:
             title_i = row['title']
             for idn_i in idn_i_list:
                 idn_i_str = get_pref_label(gnd, idn_i)
+                if idn_i_str is None:
+                    continue
                 pair_dict["pair"].append((title_i, idn_i_str))
                 pair_dict["label-ids"].append(idn_i)
                 pair_dict["title-idx"].append(idx)
@@ -84,7 +86,7 @@ class BGEReranker:
         data_frame = data_frame.copy()
         ds = self.create_rerank_dataset(data_frame, gnd)
         ds.set_format(type='torch', columns=['input_ids', 'attention_mask', 'label-ids', 'title-idx'])
-        dataloader = DataLoader(ds, batch_size=100, shuffle=False)
+        dataloader = DataLoader(ds, batch_size=bs, shuffle=False)
         sim = {
             "title-idx": [],
             "label-ids": [],

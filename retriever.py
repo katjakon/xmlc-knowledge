@@ -11,7 +11,7 @@ class Retriever:
         self.dim = self.retriever.get_sentence_embedding_dimension()
         self.M = M
     
-    def retrieve(self, mapping, index, texts, top_k=10, batch_size=256, ):
+    def retrieve(self, mapping, index, texts, top_k=10, batch_size=256, title_wise=False):
         """
         mapping: dict
         texts: list of strings
@@ -25,7 +25,10 @@ class Retriever:
 
         text_embeddings = self.retriever.encode(texts, show_progress_bar=False, batch_size=batch_size)
         similarity, indices = index.search(text_embeddings, top_k)
-        label_idn = [list(map(lambda idx: mapping[idx], top_indices)) for top_indices in indices]
+        if title_wise:
+            label_idn = [[idn for label_idn_list in map(lambda idx: mapping[idx], top_indices) for idn in label_idn_list] for top_indices in indices]
+        else:
+            label_idn = [list(map(lambda idx: mapping[idx], top_indices)) for top_indices in indices]
         return similarity, label_idn
     
     def fit(self, labels, batch_size=256):
@@ -45,7 +48,7 @@ class Retriever:
             retrieved_labels_plus.append(list(extended_labels))
         return retrieved_labels_plus
     
-    def retrieve_with_neighbors(self, graph, mapping, index, texts, k=2, top_k=10, batch_size=256, relation=None):
+    def retrieve_with_neighbors(self, graph, mapping, index, texts, k=2, top_k=10, batch_size=256, relation=None, title_wise=False):
         """
         graph: networkx.Graph
         mapping: dict
@@ -63,7 +66,8 @@ class Retriever:
             texts=texts,
             top_k=top_k,
             batch_size=batch_size,
-            index=index)
+            index=index,
+            title_wise=title_wise)
         retrieved_labels_plus = self.get_neighbors(idns, graph, k, relation)
         return retrieved_labels_plus
                 

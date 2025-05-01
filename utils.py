@@ -16,12 +16,24 @@ def strip_uri(uris, prefix="<http://d-nb.info/gnd/", suffix=">"):
             for uri in uris]
 
 def get_pref_label(graph, node_id):
-    node_data = graph.nodes[node_id]
+    node_data = graph.nodes.get(node_id)
+    if node_data is None:
+        return None
     prefered_name = node_data.get("pref", None)
     if prefered_name is not None:
         return list(prefered_name)[0]
     else:
         return None
+
+def get_alt_labels(graph, node_id):
+    node_data = graph.nodes.get(node_id)
+    if node_data is None:
+        return []
+    alternative_names = node_data.get("alt", None)
+    if alternative_names is not None:
+        return list(alternative_names)
+    else:
+        return []
 
 def get_relation_type(graph, head, tail):
     edge_data = graph.edges.get((head, tail))
@@ -39,7 +51,7 @@ def get_node_type(graph, node_id):
 
 def k_hop_neighbors(graph, node_id, k, relation=None):
     neighbors = set()
-    if k == 0:
+    if k == 0 or node_id not in graph.nodes:
         return neighbors
     for neighbor in graph.neighbors(node_id):
         if relation is not None:
@@ -50,15 +62,33 @@ def k_hop_neighbors(graph, node_id, k, relation=None):
         neighbors.update(k_hop_neighbors(graph, neighbor, k-1))
     return neighbors
 
-def get_label_mapping(graph):
+def get_label_mapping(graph, use_alt_labels=False):
     label_mapping = {}
     label_strings = []
-    for idx, node_id in enumerate(graph.nodes):
+    counter = 0
+    for node_id in graph.nodes:
         label = get_pref_label(graph, node_id)
         if label is not None:
             label_strings.append(label)
-            label_mapping[idx] = node_id
+            label_mapping[counter] = node_id
+            counter += 1
+        if use_alt_labels:
+            alt_labels = get_alt_labels(graph, node_id)
+            for alt_label in alt_labels:
+                label_strings.append(alt_label)
+                label_mapping[counter] = node_id
+                counter += 1
     return label_strings, label_mapping
+
+def get_title_mapping(title_ds):
+    title_mapping = {}
+    title_strings = []
+    for idx, row in enumerate(title_ds):
+        title = row["title"]
+        labels = row["label-ids"]
+        title_strings.append(title)
+        title_mapping[idx] = labels
+    return title_strings, title_mapping
 
 def precision_at_k(y_true, y_pred, k=None):
     if k is not None:
@@ -200,7 +230,7 @@ def generate_predictions(model, tokenizer, dataset, device="cuda"):
         predictions.append(generated_text)
     return predictions
 
-def map_labels(prediction_list, index, retriever, label_mapping, label_strings):
+def map_labels(prediction_list, index, retriever, label_mapping):
     mapped_predictions = []
     for pred_list in tqdm(prediction_list, desc="Mapping predictions to GND labels"):
         current_mapping = []
