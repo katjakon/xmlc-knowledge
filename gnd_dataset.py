@@ -89,7 +89,7 @@ class GNDDataset:
 
         for split, split_file in self.FILES.items():
             file_path = os.path.join(self.data_dir, split_file)
-            df = pd.read_csv(file_path, sep="\t", compression="gzip", header=0, names=["title", "label-idns"])
+            df = pd.read_csv(file_path, sep="\t", compression="gzip", header=0, names=["title", "label-ids"])
             # Subsample the dataset
             if split == "train":
                 # Subsample the training set
@@ -104,8 +104,8 @@ class GNDDataset:
 
         # Get prefered label namens:
         for split_df in [train_df, validate_df, test_df]:
-            split_df["label-idns"] = split_df["label-idns"].apply(strip_uri)
-            split_df["label-names"] = split_df["label-idns"].apply(
+            split_df["label-ids"] = split_df["label-ids"].apply(strip_uri)
+            split_df["label-names"] = split_df["label-ids"].apply(
                 lambda idns: [get_pref_label(self.gnd_graph, label) for label in idns if label in self.gnd_graph.nodes]
             )
             # Get label frequency
