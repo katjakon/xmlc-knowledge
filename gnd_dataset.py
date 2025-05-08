@@ -1,7 +1,9 @@
 import os
 from typing import List, Dict, Any
+import time
 
 from datasets import Dataset
+import networkx as nx
 import pandas as pd
 
 from prompt_str import PREFIX_PROMPT, SUFFIX_PROMPT
@@ -181,6 +183,63 @@ class GNDDataset:
                     suffix=SUFFIX_PROMPT, 
                     prefix=PREFIX_PROMPT
                 ))
+            self.dataset[split] = dataset
+    
+    
+    def add_context(self, retriever, index, mapping, context_type="text" ,k=3, hops=1, relation=None, use_title_wise=False, batch_size=256, splits=None):
+        """
+        Adds context to the dataset using the provided retriever.
+
+        Args:
+            retriever: Retriever model which can retrieve additional labels.
+            mapping: Mapping of indices to their corresponding IDs.
+            index: Index of the retriever.
+            context_type (str): Type of context to add (text or graph).
+            k (int): Number of labels to retrieve.  
+            hops (int): Number of hops to retrieve labels.
+            relation (str): Relation in graph which should be considered (broader or related).
+            use_title_wise (bool): Whether to use title-wise retrieval.
+            batch_size (int): Batch size for retrieval.
+            splits (List[str], optional): List of dataset splits to add context to. If None, all splits are processed.
+        
+        Returns: None
+        """
+        for split, dataset in self.dataset.items():
+            if splits is not None and split not in splits:
+                continue
+            st = time.time()
+            print(f"Adding context to {split} dataset...")
+            context_idns = retriever.retrieve_with_neighbors(
+                graph=self.gnd_graph,
+                mapping=mapping,
+                index=index,
+                texts=dataset["title"],
+                k=hops,
+                top_k=k,
+                batch_size=batch_size,
+                relation=relation,
+                title_wise=use_title_wise
+            )
+            # Map to label names
+            if context_type == "text":
+                context = [
+                    [get_pref_label(self.gnd_graph, idn) for idn in idns if idn in self.gnd_graph.nodes]
+                    for idns in context_idns
+                ]
+            elif context_type == "graph":
+                context = [
+                    [nx.node_link_data(
+                        self.gnd_graph.subgraph(idns), edges="edges")
+                        ]
+                    for idns in context_idns
+                ]
+            dataset = dataset.add_column("context", context)
+            et = time.time()
+            duration = et - st
+            # Convert to minutes and seconds
+            minutes = int(duration // 60)
+            print(f"Context added to {split} dataset in {minutes} minutes.")
+
             self.dataset[split] = dataset
     
     def save_to_disk(self, path):
