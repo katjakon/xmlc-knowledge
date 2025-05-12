@@ -4,10 +4,11 @@ import time
 
 from datasets import Dataset
 import networkx as nx
+from tqdm import tqdm
 import pandas as pd
 
 from prompt_str import PREFIX_PROMPT, SUFFIX_PROMPT
-from utils import tokenize, inference_tokenize, get_pref_label, strip_uri
+from utils import tokenize, inference_tokenize, get_pref_label, strip_uri, SEP_TOKEN
 
 
 class GNDDataset:
@@ -76,7 +77,7 @@ class GNDDataset:
             for i, label in enumerate(label_list):
                 l_str += label 
                 if i < n_labels - 1:
-                    l_str += ", "
+                    l_str += f"{SEP_TOKEN} "
             string_list.append(l_str)
         return string_list
 
@@ -186,7 +187,7 @@ class GNDDataset:
             self.dataset[split] = dataset
     
     
-    def add_context(self, retriever, index, mapping, context_type="text" ,k=3, hops=1, relation=None, use_title_wise=False, batch_size=256, splits=None):
+    def add_context(self, retriever, index, mapping, tokenizer, context_type="text" ,k=3, hops=1, relation=None, use_title_wise=False, batch_size=256, splits=None):
         """
         Adds context to the dataset using the provided retriever.
 
@@ -194,6 +195,7 @@ class GNDDataset:
             retriever: Retriever model which can retrieve additional labels.
             mapping: Mapping of indices to their corresponding IDs.
             index: Index of the retriever.
+            tokenizer: Tokenizer to use for tokenization.
             context_type (str): Type of context to add (text or graph).
             k (int): Number of labels to retrieve.  
             hops (int): Number of hops to retrieve labels.
@@ -222,23 +224,33 @@ class GNDDataset:
             )
             # Map to label names
             if context_type == "text":
-                context = [
+                context_str = [
                     [get_pref_label(self.gnd_graph, idn) for idn in idns if idn in self.gnd_graph.nodes]
                     for idns in context_idns
                 ]
+                context_ids = []
+                for str_list in tqdm(context_str):
+                    str_i = " ".join(str_list)
+                    ids = tokenizer(str_i, add_special_tokens=False, return_attention_mask=False, padding='max_length', max_length=20, truncation=True)["input_ids"]
+                    context_ids.append(ids)
+                
+                dataset = dataset.add_column("context_str", context_str)
+                dataset = dataset.add_column("context_ids", context_ids)
             elif context_type == "graph":
-                context = [
+                context_graph = [
                     [nx.node_link_data(
                         self.gnd_graph.subgraph(idns), edges="edges")
                         ]
                     for idns in context_idns
                 ]
-            dataset = dataset.add_column("context", context)
+                dataset = dataset.add_column("context_graph", context_graph)
+            
             et = time.time()
             duration = et - st
             # Convert to minutes and seconds
             minutes = int(duration // 60)
-            print(f"Context added to {split} dataset in {minutes} minutes.")
+            seconds = int(duration % 60)
+            print(f"Context added to {split} dataset in {minutes} min {seconds} sec.")
 
             self.dataset[split] = dataset
     
@@ -265,9 +277,22 @@ class GNDDataset:
             ds[key] = Dataset.load_from_disk(split_path)
         return ds
 
+    def save_to_disk(self, path):
+        """
+        Saves the dataset to disk.
+
+        Args:
+            path (str): The path to save the dataset.
+        """
+        for split, dataset in self.dataset.items():
+            dataset.save_to_disk(os.path.join(path, split))
+
     
     def __getitem__(self, split):
         return self.dataset[split]
+
+    def __setitem__(self, split, dataset):
+        self.dataset[split] = dataset
 
     def __len__(self):
         return len(self.dataset)

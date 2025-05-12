@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from gnd_dataset import GNDDataset
 from retriever import Retriever
-from utils import load_model, generate_predictions, get_label_mapping, map_labels, process_output
+from utils import load_model, generate_predictions, get_label_mapping, map_labels, process_output, SEP_TOKEN
 from prompt_str import SYSTEM_PROMPT, USER_PROMPT
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -107,7 +107,7 @@ else:
 
     processed_predictions = []
     for pred_str in raw_predictions:
-        pred_str = re.split(r"[,;]", pred_str)  # Split by commas or semicolons
+        pred_str = pred_str.split(SEP_TOKEN)
         pred_str = [s.strip() for s in pred_str if s.strip()]  # Remove empty strings
         processed_predictions.append(pred_str)
 

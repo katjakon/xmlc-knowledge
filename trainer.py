@@ -11,7 +11,7 @@ from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 import wandb
 
-from utils import inference_tokenize, process_output, generate_predictions
+from utils import inference_tokenize, generate_predictions, BATCH_KEYS, SEP_TOKEN
 from prompt_str import SUFFIX_PROMPT, PREFIX_PROMPT
 
 logger = getLogger(__name__)
@@ -44,7 +44,7 @@ class Trainer:
         torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
         torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
     
-    def eval_generate(self, model, eval_dataset, sep_token="\n"):
+    def eval_generate(self, model, eval_dataset):
         model.eval()
         model.pad_token_id = self.tokenizer.pad_token_id
         predictions = generate_predictions(
@@ -64,7 +64,7 @@ class Trainer:
                 similarity = self.similarity_model.similarity(gen_embedding, label_embedding)[0][0]
                 sims.append(similarity.item())
                 # Accuracy of predictions
-                pred_label = set(process_output(pred_str, sep_token))
+                pred_label = set([word.strip() for word in pred_str.split(SEP_TOKEN)])
                 gold_label = set(label_list)
                 correct = len(pred_label.intersection(gold_label))
                 total = len(gold_label)
@@ -101,9 +101,9 @@ class Trainer:
             suffix=SUFFIX_PROMPT, 
             prefix=PREFIX_PROMPT)
         )
-
-        tensor_train_dataset = train_dataset.select_columns(["input_ids", "attention_mask", "labels", "seq_lengths"]).with_format("torch")
-        tensor_eval_dataset = eval_dataset.select_columns(["input_ids", "attention_mask", "labels", "seq_lengths"]).with_format("torch")
+        cols = [key for key in BATCH_KEYS if key in train_dataset.column_names]
+        tensor_train_dataset = train_dataset.select_columns(cols).with_format("torch")
+        tensor_eval_dataset = eval_dataset.select_columns(cols).with_format("torch")
 
         # Create DataLoader
         train_dataloader = DataLoader(tensor_train_dataset, batch_size=self.config["batch_size"], shuffle=True)

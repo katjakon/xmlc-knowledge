@@ -9,6 +9,8 @@ from llama_prompt import GenerativePromptLlama
 
 PAD_TOKEN = "<|finetune_right_pad_id|>"
 EOT_TOKEN = "<|eot_id|>"
+BATCH_KEYS = ["input_ids", "attention_mask", "labels", "seq_lengths", "context_ids"]
+SEP_TOKEN = ";"
 
 def strip_uri(uris, prefix="<http://d-nb.info/gnd/", suffix=">"):
     uris = uris.split()
@@ -173,10 +175,13 @@ def inference_tokenize(record, tokenizer, max_length=512, suffix="", prefix=""):
     full_attention_mask = torch.tensor(full_attention_mask)
     return {"input_ids": full_ids, "attention_mask": full_attention_mask, "seq_lengths": len(input_ids)}
 
+def init_tokenizer(model_name):
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
+    return tokenizer
 
 def init_prompt_model(model_name, prompt_config, tune_lm_head=True):
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN) 
+    tokenizer = init_tokenizer(model_name)
     model = GenerativePromptLlama.from_pretrained(model_name, prompt_config=prompt_config)
     for param in model.parameters():
         param.requires_grad = False
@@ -211,20 +216,16 @@ def generate_predictions(model, tokenizer, dataset, device="cuda"):
     model.eval()
     predictions = []
     for title_batch in tqdm(dataset, desc="Generating labels..."):
-        input_ids = torch.tensor(title_batch["input_ids"]).to(device).unsqueeze(0)
-        attention_mask = torch.tensor(title_batch["attention_mask"]).to(device).unsqueeze(0)
-        seq_lengths = torch.tensor(title_batch["seq_lengths"]).to(device).unsqueeze(0)
+        title_batch = {k: v.to(device).unsqueeze(0) for k, v in title_batch.items() if k in BATCH_KEYS}
         with torch.no_grad():
             if isinstance(model, torch.nn.DataParallel):
                 gen_model = model.module
             else:
                 gen_model = model
             generated_ids = gen_model.generate(
-                input_ids=input_ids, 
-                attention_mask=attention_mask, 
-                seq_lengths=seq_lengths
+                **title_batch,
                 )
-        len_input = len(input_ids[0])
+        len_input = len(title_batch["input_ids"][0])
         generated_ids = generated_ids[0][len_input:] 
         generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
         predictions.append(generated_text)
