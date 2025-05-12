@@ -1,0 +1,5 @@
+outs:
+- md5: 50925857b9552a5620aa95f54d67664a
+  size: 39767251
+  hash: md5
+  path: title_mapping.pkl

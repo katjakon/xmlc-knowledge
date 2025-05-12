@@ -1,0 +1,5 @@
+outs:
+- md5: 2ae1bdcc3ef8813f12806bc3fbdabdde
+  size: 1977181539
+  hash: md5
+  path: label_index.pkl
