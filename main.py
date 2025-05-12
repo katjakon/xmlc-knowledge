@@ -65,12 +65,13 @@ model = torch.nn.DataParallel(model)
 gnd_ds = GNDDataset(
     data_dir=data_dir,
     gnd_graph=gnd_graph,
-    config=config
+    config=config, 
+    load_from_disk=True,
 )
 
 # Tokenize the datasets
-gnd_ds.tokenize_datasets(tokenizer=tokenizer, splits=["train", "validate"])
-gnd_ds.inference_tokenize_datasets(tokenizer=tokenizer, splits=["test"])
+# gnd_ds.tokenize_datasets(tokenizer=tokenizer, splits=["train", "validate"])
+# gnd_ds.inference_tokenize_datasets(tokenizer=tokenizer, splits=["test"])
 
 # Split the dataset into train, validation, and test sets
 train_ds = gnd_ds["train"]
