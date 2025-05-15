@@ -216,7 +216,7 @@ def generate_predictions(model, tokenizer, dataset, device="cuda"):
     model.eval()
     predictions = []
     for title_batch in tqdm(dataset, desc="Generating labels..."):
-        title_batch = {k: v.to(device).unsqueeze(0) for k, v in title_batch.items() if k in BATCH_KEYS}
+        title_batch = {k: torch.tensor(v).to(device).unsqueeze(0) for k, v in title_batch.items() if k in BATCH_KEYS}
         with torch.no_grad():
             if isinstance(model, torch.nn.DataParallel):
                 gen_model = model.module
@@ -231,7 +231,7 @@ def generate_predictions(model, tokenizer, dataset, device="cuda"):
         predictions.append(generated_text)
     return predictions
 
-def map_labels(prediction_list, index, retriever, label_mapping):
+def map_labels(prediction_list, index, retriever, label_mapping, k=1):
     mapped_predictions = []
     for pred_list in tqdm(prediction_list, desc="Mapping predictions to GND labels"):
         current_mapping = []
@@ -240,7 +240,7 @@ def map_labels(prediction_list, index, retriever, label_mapping):
                 mapping=label_mapping,
                 index=index,
                 texts=[pred],
-                top_k=1)
+                top_k=k)
             idn_sim = zip(idns[0], distance[0])
             current_mapping.extend(idn_sim)
         current_mapping = sorted(current_mapping, key=lambda x: x[1])

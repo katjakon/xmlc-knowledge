@@ -25,6 +25,8 @@ parser.add_argument("--config", type=str, help="Path to the configuration file."
 parser.add_argument("--result_dir", type=str, help="Path to the result directory.")
 parser.add_argument("--hard-prompt", action="store_true", help="Only hard prompt the model.", default=False)
 parser.add_argument("--hard_prompt_model", help="Name of the model to use.", default=None)
+parser.add_argument("--index", type=str, help="Path to the index file.")
+parser.add_argument("--mapping", type=str, help="Path to the label mapping file.")
 
 arguments = parser.parse_args()
 data_dir = arguments.data_dir
@@ -33,6 +35,8 @@ config_path = arguments.config
 result_dir = arguments.result_dir
 do_hard_prompt = arguments.hard_prompt
 hard_prompt_model = arguments.hard_prompt_model
+index_path = arguments.index
+mapping_path = arguments.mapping
 
 # Load config 
 with open(config_path, "r") as f:
@@ -112,23 +116,20 @@ else:
         processed_predictions.append(pred_str)
 
 
-# Map raw labels to GND labels
-label_strings, label_mapping = get_label_mapping(gnd_graph)
-
 retriever_model = config["sentence_transformer_model"]
 retriever = Retriever(
     retriever_model=retriever_model,
     device=DEVICE,
 )
 
-index = retriever.fit(labels=label_strings, batch_size=512)
+index = pickle.load(open(index_path, "rb"))
+mapping = pickle.load(open(mapping_path, "rb")) 
 
 mapped_predictions = map_labels(
     prediction_list=processed_predictions,
     index=index,
     retriever=retriever,
-    label_mapping=label_mapping,
-    label_strings=label_strings
+    label_mapping=mapping
 )
 
 
@@ -136,7 +137,7 @@ pred_df = pd.DataFrame(
     {
         "predictions": mapped_predictions,
         "raw_predictions": raw_predictions,
-        "label-ids": test_ds["label-idns"],
+        "label-ids": test_ds["label-ids"],
         "label-names": test_ds["label-names"],
         "title": test_ds["title"],
     }

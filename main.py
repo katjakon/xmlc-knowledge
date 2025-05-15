@@ -147,8 +147,7 @@ mapped_predictions = map_labels(
     prediction_list=processed_predictions,
     index=index,
     retriever=retriever,
-    label_mapping=label_mapping,
-    label_strings=label_strings
+    label_mapping=label_mapping
 )
 
 

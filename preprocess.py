@@ -44,8 +44,6 @@ with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
 gnd_graph = pickle.load(open(gnd_graph, "rb"))
-mapping = pickle.load(open(mapping_path, "rb")) 
-index = pickle.load(open(index_path, "rb"))
 tokenizer = init_tokenizer(config["model_name"])
 
 retriever_model = config["sentence_transformer_model"]
@@ -61,6 +59,8 @@ gnd_ds = GNDDataset(
 )
 
 if context is not None:
+    mapping = pickle.load(open(mapping_path, "rb")) 
+    index = pickle.load(open(index_path, "rb"))
     gnd_ds.add_context(
         retriever=retriever,
         tokenizer=tokenizer,
