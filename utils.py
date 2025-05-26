@@ -111,6 +111,12 @@ def f1_at_k(y_true, y_pred, k=None):
         return 0
     return 2 * (precision * recall) / (precision + recall)
 
+def jaccard_similarity(y_true, y_pred):
+    y_true = set(y_true)
+    y_pred = set(y_pred)
+    correct = y_true.intersection(y_pred)
+    return len(correct) / (len(y_pred) + len(y_true))
+
 def process_output(text):
     pattern = r"\d+[.)]"
     text = re.sub(pattern, "", text)

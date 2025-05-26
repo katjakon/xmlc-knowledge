@@ -5,6 +5,7 @@ import pickle
 from statistics import mean
 import yaml
 
+from evaluate import load
 import pandas as pd
 import torch
 from tqdm import tqdm
@@ -12,7 +13,8 @@ from transformers import logging
 
 from reranker import BGEReranker
 from gnd_dataset import GNDDataset
-from utils import recall_at_k, precision_at_k, f1_at_k, get_node_type
+from utils import recall_at_k, precision_at_k, f1_at_k, get_node_type, jaccard_similarity, SEP_TOKEN
+
 
 
 logging.set_verbosity_error()
@@ -53,20 +55,25 @@ ds = GNDDataset(
 rec_all = []
 prec_all = []
 f1_all = []
+jaccard = []
 
 # Convert to list
 test_df["predictions"] = test_df["predictions"].apply(literal_eval)
 test_df["label-ids"] = test_df["label-ids"].apply(literal_eval)
+test_df["label-names"] = test_df["label-names"].apply(literal_eval)
 
 for preds_i, golds_i in test_df[["predictions", "label-ids"]].itertuples(index=False):
     rec_all.append(recall_at_k(y_pred=preds_i, y_true=golds_i))
     prec_all.append(precision_at_k(y_pred=preds_i, y_true=golds_i))
     f1_all.append(f1_at_k(y_pred=preds_i, y_true=golds_i))
+    jaccard.append(jaccard_similarity(y_true=golds_i, y_pred=preds_i))
 
 print("Metrics without reranking:")
 print(f"Recall: {mean(rec_all)}\nPrecision: {mean(prec_all)}\nF1: {mean(f1_all)}")
+print(f"Jaccard Similarity: {mean(jaccard)}")
 
 if "reranked-predictions" not in test_df.columns:
+    reranker = BGEReranker(reranker_str, device=DEVICE)
     test_df = reranker.rerank(
         test_df,
         gnd,
