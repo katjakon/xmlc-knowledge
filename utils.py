@@ -9,7 +9,7 @@ from llama_prompt import GenerativePromptLlama
 
 PAD_TOKEN = "<|finetune_right_pad_id|>"
 EOT_TOKEN = "<|eot_id|>"
-BATCH_KEYS = ["input_ids", "attention_mask", "labels", "seq_lengths", "context_ids"]
+BATCH_KEYS = ["input_ids", "attention_mask", "labels", "seq_lengths", "context_ids", "context_lengths"]
 SEP_TOKEN = ";"
 
 def strip_uri(uris, prefix="<http://d-nb.info/gnd/", suffix=">"):

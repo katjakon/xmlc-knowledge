@@ -55,18 +55,16 @@ class BasePromptLlama(LlamaPreTrainedModel):
         """Initialize the prompt generator."""
         if self.prompt_config["type"] == "random":
             self.prompt_generator = RandomPromptGenerator(config=self.prompt_config)
-            self.prompt_generator.to(self.embed_tokens.weight.device)
         elif self.prompt_config["type"] == "hidden_states":
             self.prompt_generator = HiddenStatePromptGenerator(config=self.prompt_config)
-            self.prompt_generator.to(self.embed_tokens.weight.device)
         elif self.prompt_config["type"] == "context":
             self.prompt_generator = ContextPromptGenerator(config=self.prompt_config, embed=self.embed_tokens)
-            self.prompt_generator.to(self.embed_tokens.weight.device)
         else:
             raise ValueError(f"Unknown prompt type: {self.prompt_config['type']}")
+        self.prompt_generator.to(self.embed_tokens.weight.device)
         return self.prompt_generator
     
-    def call_prompt(self, hidden_states=None, seq_lengths=None, context_ids=None):
+    def call_prompt(self, hidden_states=None, seq_lengths=None, context_ids=None, context_lengths=None):
         """Call the prompt generator."""
         if self.prompt_generator is None:
             raise ValueError("Prompt generator not initialized. Call `add_prompt()` first.")
@@ -77,9 +75,9 @@ class BasePromptLlama(LlamaPreTrainedModel):
             prefix = self.prompt_generator(hidden_states=hidden_states, seq_lengths=seq_lengths)
             # prefix = prefix.unsqueeze(1).expand(-1, hidden_states.shape[1], -1)
         elif self.prompt_config["type"] == "context":
-            if context_ids is None:
-                raise ValueError("context_ids must be provided for context prompts.")
-            prefix = self.prompt_generator(hidden_states=hidden_states, context_ids=context_ids, seq_lengths=seq_lengths)
+            if context_ids is None or context_lengths is None:
+                raise ValueError("context_ids and context_lenghts must be provided for text context prompts.")
+            prefix = self.prompt_generator(hidden_states=hidden_states, context_ids=context_ids, seq_lengths=seq_lengths, context_lengths=context_lengths)
         return prefix
 
 
@@ -88,6 +86,7 @@ class BasePromptLlama(LlamaPreTrainedModel):
             input_ids: torch.LongTensor = None,
             attention_mask: Optional[torch.Tensor] = None,
             seq_lengths: Optional[torch.LongTensor] = None,
+            context_lengths: Optional[torch.LongTensor] = None,
             context_ids: Optional[torch.LongTensor] = None,
             position_ids: Optional[torch.LongTensor] = None,
             past_key_values: Optional[Cache] = None,
@@ -150,7 +149,12 @@ class BasePromptLlama(LlamaPreTrainedModel):
                     all_hidden_states += (hidden_states,)
 
                 if idx == self.at_layer and self.prompt_generator is not None: # Layer where prompt is prepended.
-                    prefix = self.call_prompt(hidden_states=hidden_states, seq_lengths=seq_lengths, context_ids=context_ids)
+                    prefix = self.call_prompt(
+                        hidden_states=hidden_states, 
+                        seq_lengths=seq_lengths, 
+                        context_ids=context_ids, 
+                        context_lengths=context_lengths
+                        )
                     hidden_states = torch.cat((prefix, hidden_states), dim=1)
                     attention_mask = torch.cat([prompt_attention_mask, attention_mask], dim=-1)
                     cache_position = torch.arange(
@@ -356,6 +360,7 @@ class GenerativePromptLlama(LlamaForCausalLM):
             context_ids: Optional[torch.LongTensor] = None,
             position_ids: Optional[torch.LongTensor] = None,
             seq_lengths: Optional[torch.LongTensor] = None,
+            context_lengths: Optional[torch.LongTensor] = None,
             past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
             inputs_embeds: Optional[torch.FloatTensor] = None,
             labels: Optional[torch.LongTensor] = None,
@@ -379,6 +384,7 @@ class GenerativePromptLlama(LlamaForCausalLM):
             attention_mask=attention_mask,
             context_ids=context_ids,
             seq_lengths=seq_lengths,
+            context_lengths=context_lengths,
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,

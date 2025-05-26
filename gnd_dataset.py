@@ -161,13 +161,35 @@ class GNDDataset:
                 ))
             self.dataset[split] = dataset
     
+    def tokenize_context(self, tokenizer, context_string_list):
+        """
+        Tokenizes the context strings using the provided tokenizer.
+
+        Args:
+            tokenizer: The tokenizer to use for tokenization.
+            context_string_list (List[str]): List of context strings to tokenize.
+
+        Returns:
+            List[int]: List of dictionaries containing tokenized context strings.
+        """
+        context_str = " ".join(context_string_list)
+        ids = tokenizer(context_str, add_special_tokens=False, return_attention_mask=False)["input_ids"]
+        c_length = len(ids)
+        padding_length = self.config["max_context_length"] - c_length
+        if padding_length < 0:
+            # Truncate the context string if it exceeds the maximum length
+            ids = ids[:self.config["max_context_length"]]
+            c_length = self.config["max_context_length"]
+        ids = ids + [tokenizer.pad_token_id] * (self.config["max_context_length"] - c_length)
+        return ids, c_length
+    
     def inference_tokenize_datasets(self, tokenizer, splits=None):
         """
         Tokenizes the datasets using the provided tokenizer for inference.
 
         Args:
             tokenizer: The tokenizer to use for tokenization.
-            splits (List[str], optional): List of dataset splits to tokenize. If None, all splits are tokenized.
+            splits (List[str], optional): List of datadset splits to tokenize. If None, all splits are tokenized.
 
         Returns:
             None
@@ -209,6 +231,10 @@ class GNDDataset:
         for split, dataset in self.dataset.items():
             if splits is not None and split not in splits:
                 continue
+            remove_diagonal = False 
+            # If we use the train set and title-wise retrieval, we need to remove the diagonal
+            if split == "train" and use_title_wise:
+                remove_diagonal = True
             st = time.time()
             print(f"Adding context to {split} dataset...")
             context_idns = retriever.retrieve_with_neighbors(
@@ -220,7 +246,8 @@ class GNDDataset:
                 top_k=k,
                 batch_size=batch_size,
                 relation=relation,
-                title_wise=use_title_wise
+                title_wise=use_title_wise,
+                remove_diagonal=remove_diagonal
             )
             # Map to label names
             if context_type == "text":
@@ -229,13 +256,14 @@ class GNDDataset:
                     for idns in context_idns
                 ]
                 context_ids = []
+                context_lengths = []
                 for str_list in tqdm(context_str):
-                    str_i = " ".join(str_list)
-                    ids = tokenizer(str_i, add_special_tokens=False, return_attention_mask=False, padding='max_length', max_length=20, truncation=True)["input_ids"]
+                    ids, c_length = self.tokenize_context(tokenizer=tokenizer, context_string_list=str_list)
                     context_ids.append(ids)
-                
+                    context_lengths.append(c_length)
                 dataset = dataset.add_column("context_str", context_str)
                 dataset = dataset.add_column("context_ids", context_ids)
+                dataset = dataset.add_column("context_lengths", context_lengths)
             elif context_type == "graph":
                 context_graph = [
                     [nx.node_link_data(

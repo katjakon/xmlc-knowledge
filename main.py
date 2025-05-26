@@ -11,7 +11,8 @@ import wandb
 from gnd_dataset import GNDDataset
 from trainer import Trainer
 from retriever import Retriever
-from utils import init_prompt_model, generate_predictions, get_label_mapping, map_labels
+from utils import init_prompt_model, generate_predictions, get_label_mapping, map_labels, SEP_TOKEN
+
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -116,7 +117,6 @@ trainer.train(
     output_dir=output_dir,
 )
 
-# test_ds = test_ds.select(range(100))  # Select a subset of the test dataset for evaluation
 
 raw_predictions = generate_predictions(
     model=model,
@@ -127,7 +127,7 @@ raw_predictions = generate_predictions(
 
 processed_predictions = []
 for pred_str in raw_predictions:
-    pred_str = re.split(r"[,;]", pred_str)  # Split by commas or semicolons
+    pred_str = pred_str.split(SEP_TOKEN)  # Split by commas or semicolons
     pred_str = [s.strip() for s in pred_str if s.strip()]  # Remove empty strings
     processed_predictions.append(pred_str)
 
@@ -155,7 +155,7 @@ pred_df = pd.DataFrame(
     {
         "predictions": mapped_predictions,
         "raw_predictions": raw_predictions,
-        "label-ids": test_ds["label-idns"],
+        "label-ids": test_ds["label-ids"],
         "label-names": test_ds["label-names"],
         "title": test_ds["title"],
     }
