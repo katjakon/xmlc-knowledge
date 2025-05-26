@@ -27,6 +27,8 @@ parser.add_argument("--hard-prompt", action="store_true", help="Only hard prompt
 parser.add_argument("--hard_prompt_model", help="Name of the model to use.", default=None)
 parser.add_argument("--index", type=str, help="Path to the index file.")
 parser.add_argument("--mapping", type=str, help="Path to the label mapping file.")
+parser.add_argument("--split", type=str, help="Split to use for evaluation.", default="test")
+parser.add_argument("--checkpoint", type=str, help="Checkpoint to use for evaluation.", default="best_model")
 
 arguments = parser.parse_args()
 data_dir = arguments.data_dir
@@ -37,6 +39,8 @@ do_hard_prompt = arguments.hard_prompt
 hard_prompt_model = arguments.hard_prompt_model
 index_path = arguments.index
 mapping_path = arguments.mapping
+split = arguments.split
+checkpoint = arguments.checkpoint
 
 # Load config 
 with open(config_path, "r") as f:
@@ -52,10 +56,8 @@ if do_hard_prompt:
     
 result_dir = os.path.join(result_dir, exp_name)
 
-if os.path.exists(result_dir):
-    print(f"Result directory {result_dir} already exists. Please remove it or choose a different name.")
-    exit(1)
-os.makedirs(result_dir)
+if not os.path.exists(result_dir):
+    os.makedirs(result_dir)
 
 # Load GND graph
 gnd_graph = pickle.load(open(gnd_graph, "rb"))
@@ -64,7 +66,8 @@ gnd_graph = pickle.load(open(gnd_graph, "rb"))
 gnd_ds = GNDDataset(
     data_dir=data_dir,
     gnd_graph=gnd_graph,
-    config=config
+    config=config,
+    load_from_disk=True,
 )
 
 if do_hard_prompt:
@@ -95,12 +98,12 @@ if do_hard_prompt:
 else:
     output_dir = config["checkpoint_path"]
     output_dir = os.path.join(output_dir, exp_name)
-    checkpoint_path = os.path.join(output_dir, "best_model", "model.safetensors")
+    checkpoint_path = os.path.join(output_dir, checkpoint, "model.safetensors")
 
     model, tokenizer = load_model(checkpoint_path, config=config, device=DEVICE, data_parallel=True)
 
-    gnd_ds.inference_tokenize_datasets(tokenizer=tokenizer, splits=["test"])
-    test_ds = gnd_ds["test"]
+    gnd_ds.inference_tokenize_datasets(tokenizer=tokenizer, splits=[split])
+    test_ds = gnd_ds[split]
 
     raw_predictions = generate_predictions(
         model=model,
@@ -143,4 +146,4 @@ pred_df = pd.DataFrame(
     }
 )
 
-pred_df.to_csv(os.path.join(result_dir, "predictions.csv"), index=False)
+pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-{checkpoint}.csv"), index=False)
