@@ -7,7 +7,7 @@ import yaml
 import pandas as pd
 import torch
 import transformers
-from transformers import  pipeline
+from transformers import  pipeline, set_seed
 from tqdm import tqdm
 
 from gnd_dataset import GNDDataset
@@ -29,6 +29,7 @@ parser.add_argument("--index", type=str, help="Path to the index file.")
 parser.add_argument("--mapping", type=str, help="Path to the label mapping file.")
 parser.add_argument("--split", type=str, help="Split to use for evaluation.", default="test")
 parser.add_argument("--checkpoint", type=str, help="Checkpoint to use for evaluation.", default="best_model")
+parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
 
 arguments = parser.parse_args()
 data_dir = arguments.data_dir
@@ -41,6 +42,9 @@ index_path = arguments.index
 mapping_path = arguments.mapping
 split = arguments.split
 checkpoint = arguments.checkpoint
+
+# Set random seed for reproducibility
+set_seed(arguments.seed)
 
 # Load config 
 with open(config_path, "r") as f:
@@ -146,4 +150,4 @@ pred_df = pd.DataFrame(
     }
 )
 
-pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-{checkpoint}.csv"), index=False)
+pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-checkpoint-{checkpoint}-seed-{arguments.seed}.csv"), index=False)
