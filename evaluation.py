@@ -4,6 +4,7 @@ from collections import defaultdict
 import pickle
 from statistics import mean
 import yaml
+import os
 
 from evaluate import load
 import pandas as pd
@@ -51,6 +52,7 @@ ds = GNDDataset(
     load_from_disk=True
 )
 
+all_metrics_dict = {}
 
 rec_all = []
 prec_all = []
@@ -68,9 +70,14 @@ for preds_i, golds_i in test_df[["predictions", "label-ids"]].itertuples(index=F
     f1_all.append(f1_at_k(y_pred=preds_i, y_true=golds_i))
     jaccard.append(jaccard_similarity(y_true=golds_i, y_pred=preds_i))
 
+all_metrics_dict["recall"] = mean(rec_all)
+all_metrics_dict["precision"] = mean(prec_all)
+all_metrics_dict["f1"] = mean(f1_all)
+all_metrics_dict["jaccard"] = mean(jaccard)
+
 print("Metrics without reranking:")
-print(f"Recall: {mean(rec_all)}\nPrecision: {mean(prec_all)}\nF1: {mean(f1_all)}")
-print(f"Jaccard Similarity: {mean(jaccard)}")
+print(f'Recall: {all_metrics_dict["recall"] }\nPrecision: {all_metrics_dict["precision"]}\nF1: {all_metrics_dict["f1"]}')
+print(f"Jaccard Similarity: {all_metrics_dict["jaccard"]}")
 
 if "reranked-predictions" not in test_df.columns:
     reranker = BGEReranker(reranker_str, device=DEVICE)
@@ -102,9 +109,15 @@ for preds_i, golds_i in tqdm(test_df[["reranked-predictions", "label-ids"]].iter
 
 print("Metrics with reranking:")
 for k in ks:
-    print(f"Recall@{k}: {mean(recall_dict[k])}")
-    print(f"Precision@{k}: {mean(precision_dict[k])}")
-    print(f"F1@{k}: {mean(f1_dict[k])}")
+    rec_k  = f"recall@{k}"
+    prec_k = f"precision@{k}"
+    f1_k   = f"f1@{k}"
+    all_metrics_dict[rec_k] = mean(recall_dict[k])
+    all_metrics_dict[prec_k] = mean(precision_dict[k])
+    all_metrics_dict[f1_k] = mean(f1_dict[k])
+    print(f'Recall@{k}: {all_metrics_dict[rec_k]}')
+    print(f'Precision@{k}: {all_metrics_dict[prec_k]}')
+    print(f"F1@{k}: {all_metrics_dict[f1_k]}")
     print("-----------------")
 
 ## Labelwise metrics
@@ -158,19 +171,34 @@ for label, values in macro_metrics.items():
             label_freq_grouped_rec[i].append(recall)
             break
 print("Performance per label frequency:")
+
+label_frequencies_mean = {}
 for key in label_freq_grouped_prec.keys():
     macro_prec = mean(label_freq_grouped_prec[key])
     macro_rec = mean(label_freq_grouped_rec[key])
+    label_frequencies_mean[key] = {
+        "precision": macro_prec,
+        "recall": macro_rec,
+        "support": len(label_freq_grouped_prec[key])
+    }
     print(f"Label frequency <= {key}: Precision: {macro_prec}, Recall: {macro_rec}")
     print(f"Support: {len(label_freq_grouped_prec[key])}")
 
+all_metrics_dict["label_frequencies"] = label_frequencies_mean
 print("-----------------")
 
 print("Performance per entity type:")
+entity_types_mean = {}
 for entity_type, values in entity_types.items():
     macro_prec = mean(values["precision"])
     macro_rec = mean(values["recall"])
+    entity_types_mean[entity_type] = {
+        "precision": macro_prec,
+        "recall": macro_rec,
+    }
     print(f"{entity_type}: Precision: {macro_prec}, Recall: {macro_rec}")
+
+all_metrics_dict["entity_types"] = entity_types_mean
 
 # Distribution of frequency of labels in test set
 label_freq_test = {freq: set() for freq in [0, 10, 100, 1000, 10000, 100000] }
@@ -219,3 +247,47 @@ print("-----------------")
 
 avg_no_preds /= len(test_df)
 print(f"Average number of predictions per sample: {avg_no_preds}")
+all_metrics_dict["avg_no_preds"] = avg_no_preds
+
+# MT Metrics
+bertscore = load("bertscore")
+meteor = load('meteor')
+rouge = load('rouge')
+
+gold_labels = test_df["label-names"].apply(lambda x: f"{SEP_TOKEN} ".join(x))
+raw_preds = test_df["raw_predictions"]
+
+bert_results = bertscore.compute(
+    predictions=raw_preds, 
+    references=gold_labels, 
+    model_type="bert-base-multilingual-cased", 
+    lang="de"
+)
+bert_results = {
+    "precision": mean(bert_results["precision"]),
+    "recall": mean(bert_results["recall"]),
+    "f1": mean(bert_results["f1"])
+}
+print(f"BERTScore: {bert_results}")
+all_metrics_dict["bertscore"] = bert_results
+
+meteor_results = meteor.compute(
+    predictions=raw_preds, 
+    references=gold_labels
+)
+print(f"Meteor: {meteor_results}")
+all_metrics_dict["meteor"] = float(meteor_results['meteor'])
+
+rouge_results = rouge.compute(
+    predictions=raw_preds, 
+    references=gold_labels
+)
+print(f"Rouge: {rouge_results}")
+all_metrics_dict["rouge"] = {k: float(v) for k, v in rouge_results.items()}
+
+# Save all metrics to a YAML file
+file_name = os.path.basename(pred_file).split(".")[0]
+eval_path = os.path.join(os.path.dirname(pred_file), f"{file_name}_eval.yaml")
+with open(eval_path, "w") as f:
+    yaml.dump(all_metrics_dict, f, indent=2, sort_keys=False, allow_unicode=True)
+
