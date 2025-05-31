@@ -1,5 +1,6 @@
 import re
 
+import networkx as nx
 from transformers import AutoTokenizer
 import torch
 from tqdm import tqdm
@@ -116,6 +117,49 @@ def jaccard_similarity(y_true, y_pred):
     y_pred = set(y_pred)
     correct = y_true.intersection(y_pred)
     return len(correct) / (len(y_pred) + len(y_true))
+
+def inverse_distance_weight(graph, gold_node, predicted_node):
+    """
+    Calculate graph distance weight between two nodes in a graph.
+    The weight is inversely proportional to the shortest path distance between the nodes.
+
+    Args:
+        graph (networkx.Graph): The graph containing the nodes.
+        gold_node (str): The node representing the gold standard.
+        predicted_node (str): The node representing the predicted label.
+    
+    Returns:
+        float: The weight based on the distance between the nodes.
+    """
+    weight = 0.0
+    # Compute shortest path distance
+    if gold_node == predicted_node:
+        distance = 0  # Perfect match
+    else:
+        try:
+            if gold_node not in graph or predicted_node not in graph:
+                return 0.0
+            distance = nx.shortest_path_length(graph, source=gold_node, target=predicted_node)
+        except nx.NetworkXNoPath:
+            distance = float('inf')  # No path exists
+
+        # Weight inversely proportional to distance
+    weight = 1 / (1 + distance) if distance != float('inf') else 0
+
+    # Normalize by the number of predictions
+    return weight
+
+def weighted_precision(y_true, y_pred, graph):
+    weighted_prec = []
+    for p in y_pred:
+        max_weight = - float('inf')
+        for g in y_true:
+            weight = inverse_distance_weight(graph, g, p)
+            if weight > max_weight:
+                max_weight = weight
+        weighted_prec.append(max_weight)
+    weighted_prec = sum(weighted_prec) / len(weighted_prec) if weighted_prec else 0
+    return weighted_prec
 
 def process_output(text):
     pattern = r"\d+[.)]"

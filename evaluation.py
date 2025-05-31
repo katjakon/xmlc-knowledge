@@ -14,7 +14,7 @@ from transformers import logging
 
 from reranker import BGEReranker
 from gnd_dataset import GNDDataset
-from utils import recall_at_k, precision_at_k, f1_at_k, get_node_type, jaccard_similarity, SEP_TOKEN
+from utils import recall_at_k, precision_at_k, f1_at_k, get_node_type, jaccard_similarity, weighted_precision, SEP_TOKEN
 
 
 
@@ -58,6 +58,7 @@ rec_all = []
 prec_all = []
 f1_all = []
 jaccard = []
+weighted_prec = []
 
 # Convert to list
 test_df["predictions"] = test_df["predictions"].apply(literal_eval)
@@ -69,15 +70,18 @@ for preds_i, golds_i in test_df[["predictions", "label-ids"]].itertuples(index=F
     prec_all.append(precision_at_k(y_pred=preds_i, y_true=golds_i))
     f1_all.append(f1_at_k(y_pred=preds_i, y_true=golds_i))
     jaccard.append(jaccard_similarity(y_true=golds_i, y_pred=preds_i))
+    weighted_prec.append(weighted_precision(y_pred=preds_i, y_true=golds_i, graph=gnd))
 
 all_metrics_dict["recall"] = mean(rec_all)
 all_metrics_dict["precision"] = mean(prec_all)
 all_metrics_dict["f1"] = mean(f1_all)
 all_metrics_dict["jaccard"] = mean(jaccard)
+all_metrics_dict["weighted_precision"] = mean(weighted_prec)
 
 print("Metrics without reranking:")
 print(f'Recall: {all_metrics_dict["recall"] }\nPrecision: {all_metrics_dict["precision"]}\nF1: {all_metrics_dict["f1"]}')
 print(f"Jaccard Similarity: {all_metrics_dict["jaccard"]}")
+print(f"Weighted Precision: {all_metrics_dict['weighted_precision']}")
 
 if "reranked-predictions" not in test_df.columns:
     reranker = BGEReranker(reranker_str, device=DEVICE)
