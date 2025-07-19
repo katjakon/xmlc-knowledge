@@ -7,14 +7,12 @@ import networkx as nx
 from tqdm import tqdm
 import pandas as pd
 
-from prompt_str import PREFIX_PROMPT, SUFFIX_PROMPT
-from utils import tokenize, inference_tokenize, get_pref_label, strip_uri, SEP_TOKEN
+from utils import get_pref_label, strip_uri, SEP_TOKEN
 
 
 class GNDDataset:
     """
     A custom dataset class for the GND (German National Library) dataset.
-    Inherits from the Hugging Face `Dataset` class.
     """
 
     FILES = {
@@ -136,78 +134,6 @@ class GNDDataset:
             "test": test_dataset,
         }
     
-    def tokenize_datasets(self, tokenizer, splits=None):
-        """
-        Tokenizes the datasets using the provided tokenizer.
-
-        Args:
-            tokenizer: The tokenizer to use for tokenization.
-            splits (List[str], optional): List of dataset splits to tokenize. If None, all splits are tokenized.
-
-        Returns:
-            None
-        """
-        for split, dataset in self.dataset.items():
-            if splits is not None and split not in splits:
-                continue
-            dataset = dataset.map(
-                lambda x: tokenize
-                (
-                    x, 
-                    tokenizer, 
-                    max_length=self.config["max_seq_length"], 
-                    suffix=SUFFIX_PROMPT, 
-                    prefix=PREFIX_PROMPT
-                ))
-            self.dataset[split] = dataset
-    
-    def tokenize_context(self, tokenizer, context_string_list):
-        """
-        Tokenizes the context strings using the provided tokenizer.
-
-        Args:
-            tokenizer: The tokenizer to use for tokenization.
-            context_string_list (List[str]): List of context strings to tokenize.
-
-        Returns:
-            List[int]: List of dictionaries containing tokenized context strings.
-        """
-        context_str = " ".join(context_string_list)
-        ids = tokenizer(context_str, add_special_tokens=False, return_attention_mask=False)["input_ids"]
-        c_length = len(ids)
-        padding_length = self.config["max_context_length"] - c_length
-        if padding_length < 0:
-            # Truncate the context string if it exceeds the maximum length
-            ids = ids[:self.config["max_context_length"]]
-            c_length = self.config["max_context_length"]
-        ids = ids + [tokenizer.pad_token_id] * (self.config["max_context_length"] - c_length)
-        return ids, c_length
-    
-    def inference_tokenize_datasets(self, tokenizer, splits=None):
-        """
-        Tokenizes the datasets using the provided tokenizer for inference.
-
-        Args:
-            tokenizer: The tokenizer to use for tokenization.
-            splits (List[str], optional): List of datadset splits to tokenize. If None, all splits are tokenized.
-
-        Returns:
-            None
-        """
-        for split, dataset in self.dataset.items():
-            if splits is not None and split not in splits:
-                continue
-            dataset = dataset.map(
-                lambda x: inference_tokenize
-                (
-                    x, 
-                    tokenizer, 
-                    max_length=self.config["max_seq_length"], 
-                    suffix=SUFFIX_PROMPT, 
-                    prefix=PREFIX_PROMPT
-                ))
-            self.dataset[split] = dataset
-    
     
     def add_context(self, retriever, index, mapping, tokenizer, context_type="text" ,k=3, hops=1, relation=None, use_title_wise=False, batch_size=256, splits=None):
         """
@@ -250,28 +176,28 @@ class GNDDataset:
                 remove_diagonal=remove_diagonal
             )
             # Map to label names
-            if context_type == "text":
-                context_str = [
-                    [get_pref_label(self.gnd_graph, idn) for idn in idns if idn in self.gnd_graph.nodes]
-                    for idns in context_idns
-                ]
-                context_ids = []
-                context_lengths = []
-                for str_list in tqdm(context_str):
-                    ids, c_length = self.tokenize_context(tokenizer=tokenizer, context_string_list=str_list)
-                    context_ids.append(ids)
-                    context_lengths.append(c_length)
-                dataset = dataset.add_column("context_str", context_str)
-                dataset = dataset.add_column("context_ids", context_ids)
-                dataset = dataset.add_column("context_lengths", context_lengths)
-            elif context_type == "graph":
-                context_graph = [
-                    [nx.node_link_data(
-                        self.gnd_graph.subgraph(idns), edges="edges")
-                        ]
-                    for idns in context_idns
-                ]
-                dataset = dataset.add_column("context_graph", context_graph)
+            context_str = [
+                [get_pref_label(self.gnd_graph, idn) for idn in idns if idn in self.gnd_graph.nodes]
+                for idns in context_idns
+            ]
+            context_ids = []
+            context_lengths = []
+            for str_list in tqdm(context_str):
+                ids, c_length = self.tokenize_context(tokenizer=tokenizer, context_string_list=str_list)
+                context_ids.append(ids)
+                context_lengths.append(c_length)
+            dataset = dataset.add_column("context_str", context_str)
+            dataset = dataset.add_column("context_ids", context_ids)
+            dataset = dataset.add_column("context_lengths", context_lengths)
+
+            # Add subgraph:
+            context_graph = [
+                [nx.node_link_data(
+                    self.gnd_graph.subgraph(idns), edges="edges")
+                    ]
+                for idns in context_idns
+            ]
+            dataset = dataset.add_column("context_graph", context_graph)
             
             et = time.time()
             duration = et - st

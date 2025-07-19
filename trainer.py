@@ -11,19 +11,35 @@ from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 import wandb
 
-from utils import inference_tokenize, generate_predictions, BATCH_KEYS, SEP_TOKEN
+from utils import tokenize, inference_tokenize, generate_predictions, tokenize_context, SEP_TOKEN
 from prompt_str import SUFFIX_PROMPT, PREFIX_PROMPT
 
 logger = getLogger(__name__)
 
 logging.set_verbosity_error()
 
+def collate_fn(batch, tokenizer, config):
+    """
+    Custom collate function for dynamic padding.
+    Args:
+        batch: List of samples from the dataset.
+        tokenizer: Tokenizer to handle padding and attention masks.
+    Returns:
+        A dictionary with input_ids, attention_mask, and labels (if available).
+    """
+    input_batch = tokenize(batch, tokenizer, suffix=SUFFIX_PROMPT, prefix=PREFIX_PROMPT)
+
+    if config["context"].get("context_type") is not None:
+        context_batch = tokenize_context(batch, tokenizer)
+        input_batch.update(context_batch)
+    return input_batch
+
 class Trainer:
 
     def __init__(self, config) -> None:
         self.config = config
         self.model_name = config["model_name"]
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer = None
         self.prompt_config = self.config["prompt_config"]
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.similarity_model = SentenceTransformer(self.config["sentence_transformer_model"])
@@ -88,27 +104,28 @@ class Trainer:
         model.train()
         return eval_loss
     
-    def train(self, model, train_dataset, eval_dataset, output_dir):
+    def train(self, model, tokenizer, train_dataset, eval_dataset, output_dir):
         model.to(self.device)
-
+        self.tokenizer = tokenizer
         # Subsample for generation evaluation
-        gen_len = min(200, len(eval_dataset))
-        gen_eval_ds = eval_dataset.select(range(gen_len))
+        gen_eval_ds = eval_dataset.select(range(200)).select_columns(["label-string", "label-names", "title"])
         gen_eval_ds = gen_eval_ds.map(lambda x: inference_tokenize(
             x, 
             self.tokenizer, 
-            max_length=self.config["max_seq_length"], 
             suffix=SUFFIX_PROMPT, 
             prefix=PREFIX_PROMPT)
         )
-        cols = [key for key in BATCH_KEYS if key in train_dataset.column_names]
-        tensor_train_dataset = train_dataset.select_columns(cols).with_format("torch")
-        tensor_eval_dataset = eval_dataset.select_columns(cols).with_format("torch")
-
         # Create DataLoader
-        train_dataloader = DataLoader(tensor_train_dataset, batch_size=self.config["batch_size"], shuffle=True)
-        eval_dataloader = DataLoader(tensor_eval_dataset, batch_size=self.config["batch_size"], shuffle=False)
-
+        train_dataloader = DataLoader(
+            train_dataset, 
+            batch_size=self.config["batch_size"], 
+            shuffle=True, 
+            collate_fn=lambda x: collate_fn(x, self.tokenizer, config=self.config))
+        eval_dataloader = DataLoader(
+            eval_dataset,
+            batch_size=self.config["batch_size"],
+            shuffle=False,
+            collate_fn=lambda x: collate_fn(x, self.tokenizer, config=self.config))
 
         num_epochs = self.config["num_epochs"]
         log_steps = self.config["logging_steps"]
@@ -129,7 +146,6 @@ class Trainer:
         global_step = 0
         track_loss = []
         best_eval_loss = float("inf")
-        best_sim = 0.0
         for epoch in range(num_epochs):
             model.train()
             for batch in tqdm(train_dataloader, desc=f"Epoch {epoch + 1}/{num_epochs}", leave=False):
@@ -153,34 +169,23 @@ class Trainer:
                     wandb.log({"loss": avg_loss, "learning_rate": lr, "Step": global_step})
                     print(f"\nStep {global_step}: Loss {avg_loss} Learning Rate {lr}")
                 if global_step % eval_steps == 0:
-                    eval_loss = self.evaluate(model, eval_dataloader)
-                    wandb.log({"eval_loss": eval_loss})
-                    print(f"Eval Loss: {eval_loss}")
-
                     if self.config["eval_generation"] is True:
                         gen_sim, gen_acc = self.eval_generate(model, gen_eval_ds)
                         wandb.log({"similarity": gen_sim})
                         wandb.log({"accuracy": gen_acc})
                         print(f"Generation Similarity: {gen_sim}")
                         print(f"Generation Accuracy: {gen_acc}")
-                        if gen_sim > best_sim:
-                            best_sim = gen_sim
-                            check_path = os.path.join(output_dir, "best_model")
-                            self.save_checkpoint(
-                                model=model, 
-                                scheduler=scheduler,
-                                optimizer=optimizer,
-                                output_dir=check_path)
-                            print(f"Best model saved at step {global_step}")
-                    else:
-                        if eval_loss < best_eval_loss:
-                            check_path = os.path.join(output_dir, "best_model")
-                            self.save_checkpoint(
-                                model=model, 
-                                scheduler=scheduler,
-                                optimizer=optimizer,
-                                output_dir=check_path)
-                            print(f"Best model saved at step {global_step}")
+                    eval_loss = self.evaluate(model, eval_dataloader)
+                    wandb.log({"eval_loss": eval_loss})
+                    print(f"Eval Loss: {eval_loss}")
+                    if eval_loss < best_eval_loss:
+                        check_path = os.path.join(output_dir, "best_model")
+                        self.save_checkpoint(
+                            model=model, 
+                            scheduler=scheduler,
+                            optimizer=optimizer,
+                            output_dir=check_path)
+                        print(f"Best model saved at step {global_step}")
                 if global_step % save_steps == 0:
                     check_path = os.path.join(output_dir, f"checkpoint-{global_step}")
                     self.save_checkpoint(

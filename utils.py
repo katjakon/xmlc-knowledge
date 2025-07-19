@@ -162,8 +162,8 @@ def weighted_precision(y_true, y_pred, graph):
     return weighted_prec
 
 def process_output(text):
-    pattern = r"\d+[.)]"
-    text = re.sub(pattern, "", text)
+    # pattern = r"\d+[.)]"
+    # text = re.sub(pattern, "", text)
     sep_tokens = r"[,;-]"
     text = re.split(sep_tokens, text)
     text = [x.strip() for x in text]
@@ -171,59 +171,85 @@ def process_output(text):
         text = text[0].split(" ")
     return [keyword for keyword in text if keyword]
 
-def tokenize(record, tokenizer, max_length=512, suffix="", prefix=""):
+def tokenize(batch, tokenizer, suffix="", prefix="", max_length=55):
 
-    label_str = record["label-string"]
-    title = record["title"]
-    prefix_tok_out = tokenizer(prefix, add_special_tokens=False)
-    suffix_tok_out = tokenizer(suffix, add_special_tokens=False)
-    prompt_tok_out = tokenizer(record["title"], add_special_tokens=False, truncation=True, max_length=75)
+    texts = [
+        f"{prefix}{item['title']}{suffix}"
+        for item in batch
+        ]
 
-    # Truncate the prompt if it's too long. Subtract 2 for the [BOS] and [EOS] tokens.
-    trunc_len = max_length - len(prefix_tok_out["input_ids"]) - len(suffix_tok_out["input_ids"]) - len(prompt_tok_out["input_ids"]) - 2
-    if trunc_len <= 0:
-        raise ValueError(f"Input '{title}' is too long ({-trunc_len}). Increase max_length.")
-    target_tok_out = tokenizer(label_str, add_special_tokens=False, truncation=True, max_length=trunc_len)
+    labels = [f"{SEP_TOKEN} ".join(item['label-names']) for item in batch]
 
-    # Add special tokens
-    input_ids = [tokenizer.bos_token_id] + prefix_tok_out["input_ids"] + prompt_tok_out["input_ids"] + suffix_tok_out["input_ids"]
-    target_ids = target_tok_out["input_ids"] + [tokenizer.eos_token_id]
+    tokenized_inputs = tokenizer(
+        texts,
+        padding=False,  # No padding yet
+        truncation=True,  
+        max_length=max_length,  # Truncate to max_length
+        add_special_tokens=False,
+        return_attention_mask=False,
+    )
 
-    len_text = len(input_ids) + len(target_ids)
-    padding_length = max_length - len_text
-    full_ids = input_ids + target_ids
-    full_ids = full_ids + [tokenizer.pad_token_id] * padding_length # Pad to max_length.
-    labels = [-100] * len(input_ids) + target_ids + [-100] * padding_length # Only compute loss on target tokens.
-    full_attention_mask = [1] * len_text + [0] * padding_length # Mask padding tokens.
+    input_ids = [
+        [tokenizer.bos_token_id] + input_id
+        for input_id in tokenized_inputs['input_ids']
+    ]
 
-    # Convert to tensors
-    full_ids = torch.tensor(full_ids)
-    labels = torch.tensor(labels)
-    full_attention_mask = torch.tensor(full_attention_mask)
-    return {"input_ids": full_ids, "labels": labels, "attention_mask": full_attention_mask, "seq_lengths": len(input_ids)}
+    input_lengths = torch.tensor([len(input_id) for input_id in input_ids])
 
-def inference_tokenize(record, tokenizer, max_length=512, suffix="", prefix=""):
+    # Tokenize labels
+    tokenized_labels = tokenizer(
+        labels,
+        padding=False,  # No padding yet
+        truncation=False,  # Do not truncate
+        add_special_tokens=False, 
+        return_attention_mask=False,
+    )
+    label_ids = [
+        label_id + [tokenizer.eos_token_id]
+        for label_id in tokenized_labels['input_ids']
+    ]
 
-    prefix_tok_out = tokenizer(prefix, add_special_tokens=False)
-    suffix_tok_out = tokenizer(suffix, add_special_tokens=False)
+    # Concatenate input IDs and label IDs
+    full_ids = [
+        torch.tensor(input_id + label_id)
+        for input_id, label_id in zip(input_ids, label_ids)
+    ]
+    full_ids = torch.nn.utils.rnn.pad_sequence(full_ids, batch_first=True, padding_value=tokenizer.pad_token_id)
+    labels = torch.full_like(full_ids, fill_value=-100)  # Initialize with -100
 
-    # Truncate the prompt if it's too long. Subtract 2 for the [BOS] and [EOS] tokens.
-    trunc_len = max_length - len(prefix_tok_out["input_ids"]) - len(suffix_tok_out["input_ids"]) - 2
-    if trunc_len <= 0:
-        raise ValueError("Input is too long. Increase max_length.")
-    prompt_tok_out = tokenizer(record["title"], add_special_tokens=False, truncation=True, max_length=trunc_len)
-    
-    # Add special tokens
-    input_ids = [tokenizer.bos_token_id] + prefix_tok_out["input_ids"] + prompt_tok_out["input_ids"] + suffix_tok_out["input_ids"]
+    for i, length in enumerate(input_lengths):
+        labels[i, length:] = full_ids[i, length:]  # Replace target positions with actual values
 
-    len_text = len(input_ids) 
-    full_ids = input_ids 
-    full_attention_mask = [1] * len_text 
+    attention_mask = (full_ids != tokenizer.pad_token_id).long()
+    labels[~attention_mask.bool()] = -100  # Set padding positions in labels to -100
+    return {"input_ids": full_ids, "labels": labels, "attention_mask": attention_mask, "seq_lengths": input_lengths}
 
-    # Convert to tensors
-    full_ids = torch.tensor(full_ids)
-    full_attention_mask = torch.tensor(full_attention_mask)
-    return {"input_ids": full_ids, "attention_mask": full_attention_mask, "seq_lengths": len(input_ids)}
+def inference_tokenize(batch, tokenizer, suffix="", prefix=""):
+    texts = f"{prefix}{batch['title']}{suffix}"
+    tokenized_inputs = tokenizer(
+        texts,
+        padding=False,  # No padding yet
+        truncation=False,  # Do not truncate
+        add_special_tokens=False,
+        return_attention_mask=False,
+    )
+    input_ids = torch.tensor([tokenizer.bos_token_id] + tokenized_inputs['input_ids'])
+    input_lengths = torch.tensor(len(input_ids))
+    attention_mask = (input_ids != tokenizer.pad_token_id).long()
+    return {"input_ids": input_ids, "attention_mask": attention_mask, "seq_lengths": input_lengths}
+
+def tokenize_context(batch, tokenizer):
+    strings = [SEP_TOKEN.join(item) for item in batch["context_str"]]
+    tokenized_context = tokenizer(
+        strings,
+        padding=False,  # No padding yet
+        truncation=False,  # Do not truncate
+        add_special_tokens=False,
+        return_attention_mask=False,
+    )
+    context_length = torch.tensor([len(context) for context in tokenized_context['input_ids']])
+    context_ids = torch.nn.utils.rnn.pad_sequence(tokenized_context["input_ids"], batch_first=True, padding_value=tokenizer.pad_token_id)
+    return {"context_ids": context_ids, "context_lengths": context_length}
 
 def init_tokenizer(model_name):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -238,8 +264,6 @@ def init_prompt_model(model_name, prompt_config, tune_lm_head=True):
     if tune_lm_head: 
         for param in model.lm_head.parameters():
             param.requires_grad = True
-    for param in model.lm_head.parameters():
-        param.requires_grad = True
     model.model.add_prompt()
     return model, tokenizer
 

@@ -17,17 +17,14 @@ from utils import init_prompt_model, generate_predictions, get_label_mapping, ma
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 parser = argparse.ArgumentParser(description="Train a model on the GND dataset.")
-parser.add_argument("--data_dir", type=str, help="Path to the GND dataset directory.")
-parser.add_argument("--gnd_graph", type=str, help="Path to the GND graph file (pickle).")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--result_dir", type=str, help="Path to the result directory.")
+parser.add_argument("--dev", action="store_true", help="Run in development mode with a smaller dataset.")
 
 arguments = parser.parse_args()
-data_dir = arguments.data_dir
-gnd_graph = arguments.gnd_graph
 config_path = arguments.config
 result_dir = arguments.result_dir
-
+dev = arguments.dev
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
@@ -51,7 +48,8 @@ if os.path.exists(res_dir):
 os.makedirs(res_dir)
 
 # Load GND graph
-gnd_graph = pickle.load(open(gnd_graph, "rb"))
+gnd_path  = config["graph_path"]
+gnd_graph = pickle.load(open(gnd_path, "rb"))
 
 model_name = config["model_name"]
 
@@ -63,6 +61,7 @@ model, tokenizer = init_prompt_model(
 model = torch.nn.DataParallel(model)
 
 # Load GND dataset
+data_dir = config["dataset_path"]
 gnd_ds = GNDDataset(
     data_dir=data_dir,
     gnd_graph=gnd_graph,
@@ -70,14 +69,15 @@ gnd_ds = GNDDataset(
     load_from_disk=True,
 )
 
-# Tokenize the datasets
-# gnd_ds.tokenize_datasets(tokenizer=tokenizer, splits=["train", "validate"])
-# gnd_ds.inference_tokenize_datasets(tokenizer=tokenizer, splits=["test"])
-
 # Split the dataset into train, validation, and test sets
-train_ds = gnd_ds["train"]
+
+train_ds = gnd_ds["train"] 
 valid_ds = gnd_ds["validate"]
 test_ds = gnd_ds["test"]
+
+if dev:
+    # For development, use a smaller subset of the dataset
+    train_ds = train_ds.select(range(10_000))
 
 # How many parameters are in the model?
 total_model_params = 0
@@ -99,7 +99,7 @@ num_tokens = config["prompt_config"]["num_prompt_tokens"]
 
 wandb.init(
       # Set the project where this run will be logged
-      project="xmlc-knowledge",
+      project="xmlc-knowledge-final",
       name=f"{exp_name}",
       # Track hyperparameters and run metadata
       config={
@@ -112,6 +112,7 @@ wandb.init(
 trainer = Trainer(config)
 trainer.train(
     model=model,
+    tokenizer=tokenizer,
     train_dataset=train_ds,
     eval_dataset=valid_ds,
     output_dir=output_dir,
