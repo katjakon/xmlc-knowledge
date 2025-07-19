@@ -11,10 +11,11 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 from transformers import logging
+from sentence_transformers import SentenceTransformer
 
 from reranker import BGEReranker
 from gnd_dataset import GNDDataset
-from utils import recall_at_k, precision_at_k, f1_at_k, get_node_type, jaccard_similarity, weighted_precision, SEP_TOKEN
+from utils import recall_at_k, precision_at_k, f1_at_k, get_node_type, get_pref_label, jaccard_similarity, weighted_precision, SEP_TOKEN
 
 
 
@@ -22,19 +23,15 @@ logging.set_verbosity_error()
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 parser = argparse.ArgumentParser(description="Evaluate the model on the GND dataset.")
-parser.add_argument("--gnd_graph", type=str, help="Path to the GND graph file (pickle).")
 parser.add_argument("--reranker_model", type=str, help="Name of the reranker model.", default="BAAI/bge-reranker-v2-m3")
 parser.add_argument("--predictions_file", type=str, help="Path to the predictions file.")
 parser.add_argument("--write_reranked", type=bool, default=True, help="Whether to write the reranked predictions to the given file.")
-parser.add_argument("--dataset", type=str, help="Name of the dataset.")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 
 arguments = parser.parse_args()
 reranker_str = arguments.reranker_model
-gnd_path = arguments.gnd_graph 
 pred_file = arguments.predictions_file
 write_reranked = arguments.write_reranked
-dataset = arguments.dataset 
 config_path = arguments.config
 
 # Load config
@@ -42,12 +39,18 @@ with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
 reranker = BGEReranker(reranker_str, device=DEVICE)
-gnd = pickle.load(open(gnd_path, "rb"))
+
+# Load GND graph
+gnd_path = config["graph_path"]
+gnd_graph = pickle.load(open(gnd_path, "rb"))
+
+# Load predictions file.
 test_df = pd.read_csv(pred_file)
 
+dataset_path = config["dataset_path"]
 ds = GNDDataset(
-    data_dir=dataset,
-    gnd_graph=gnd,
+    data_dir=dataset_path,
+    gnd_graph=gnd_graph,
     config=config,
     load_from_disk=True
 )
@@ -63,14 +66,22 @@ weighted_prec = []
 # Convert to list
 test_df["predictions"] = test_df["predictions"].apply(literal_eval)
 test_df["label-ids"] = test_df["label-ids"].apply(literal_eval)
-test_df["label-names"] = test_df["label-names"].apply(literal_eval)
+label_names = []
+for ids in test_df["label-ids"]:
+    instance_names = []
+    for i in ids:
+        if i in gnd_graph.nodes:
+            i_pref = get_pref_label(gnd_graph, i)
+            instance_names.append(i_pref)
+    label_names.append(instance_names)
+test_df["label-names"] = label_names
 
 for preds_i, golds_i in test_df[["predictions", "label-ids"]].itertuples(index=False):
     rec_all.append(recall_at_k(y_pred=preds_i, y_true=golds_i))
     prec_all.append(precision_at_k(y_pred=preds_i, y_true=golds_i))
     f1_all.append(f1_at_k(y_pred=preds_i, y_true=golds_i))
     jaccard.append(jaccard_similarity(y_true=golds_i, y_pred=preds_i))
-    weighted_prec.append(weighted_precision(y_pred=preds_i, y_true=golds_i, graph=gnd))
+    weighted_prec.append(weighted_precision(y_pred=preds_i, y_true=golds_i, graph=gnd_graph))
 
 all_metrics_dict["recall"] = mean(rec_all)
 all_metrics_dict["precision"] = mean(prec_all)
@@ -87,7 +98,7 @@ if "reranked-predictions" not in test_df.columns:
     reranker = BGEReranker(reranker_str, device=DEVICE)
     test_df = reranker.rerank(
         test_df,
-        gnd,
+        gnd_graph,
         bs=200
     )
     # Save reranked_df
@@ -151,6 +162,7 @@ for preds_i, golds_i in tqdm(test_df[["reranked-predictions", "label-ids"]].iter
 
 label_freq_grouped_prec = { freq: [] for freq in [0, 10, 100, 1000, 10000, 100000] }
 label_freq_grouped_rec = { freq: [] for freq in [0, 10, 100, 1000, 10000, 100000] }
+support_lf = { freq: 0 for freq in [0, 10, 100, 1000, 10000, 100000] }
 entity_types = {}
 
 for label, values in macro_metrics.items():
@@ -161,7 +173,7 @@ for label, values in macro_metrics.items():
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
 
-    type_i = get_node_type(gnd, label)
+    type_i = get_node_type(gnd_graph, label)
     if type_i not in entity_types:
         entity_types[type_i] = {"precision": [], "recall": []}
     entity_types[type_i]["precision"].append(precision)
@@ -173,20 +185,47 @@ for label, values in macro_metrics.items():
         if freq <= i:
             label_freq_grouped_prec[i].append(precision)
             label_freq_grouped_rec[i].append(recall)
+            support_lf[i] += 1
             break
+
+# Distribution of frequency of labels in test set
+label_freq_test = {freq: set() for freq in [0, 10, 100, 1000, 10000, 100000] }
+for label in test_df["label-ids"]:
+    for label_i in label:
+        label_i_freq = label_freq.get(label_i, 0)
+        sort_bins = sorted(label_freq_test.keys())
+        for i in sort_bins:
+            if label_i_freq <= i:
+                label_freq_test[i].add(label_i)
+                break
+print("Distribution of label frequencies in test set:")
+for key in label_freq_test.keys():
+    label_freq_test[key] = len(label_freq_test[key])
+    print(f"Label frequency <= {key}: {label_freq_test[key]}")
+
+print("-----------------")
 print("Performance per label frequency:")
 
 label_frequencies_mean = {}
 for key in label_freq_grouped_prec.keys():
-    macro_prec = mean(label_freq_grouped_prec[key])
-    macro_rec = mean(label_freq_grouped_rec[key])
+    current_prec = label_freq_grouped_prec[key]
+    current_rec = label_freq_grouped_rec[key]
+
+    if current_prec:
+        macro_prec = mean(current_prec)
+    else:
+        macro_prec = 0.0
+    if current_rec:
+        macro_rec = mean(current_rec)
+    else:
+        macro_rec = 0.0
     label_frequencies_mean[key] = {
         "precision": macro_prec,
         "recall": macro_rec,
-        "support": len(label_freq_grouped_prec[key])
+        "support": label_freq_test[key],
     }
     print(f"Label frequency <= {key}: Precision: {macro_prec}, Recall: {macro_rec}")
-    print(f"Support: {len(label_freq_grouped_prec[key])}")
+    print(f"Support: {label_freq_test[key]}")
 
 all_metrics_dict["label_frequencies"] = label_frequencies_mean
 print("-----------------")
@@ -204,20 +243,6 @@ for entity_type, values in entity_types.items():
 
 all_metrics_dict["entity_types"] = entity_types_mean
 
-# Distribution of frequency of labels in test set
-label_freq_test = {freq: set() for freq in [0, 10, 100, 1000, 10000, 100000] }
-for label in test_df["label-ids"]:
-    for label_i in label:
-        label_i_freq = label_freq.get(label_i, 0)
-        sort_bins = sorted(label_freq_test.keys())
-        for i in sort_bins:
-            if label_i_freq <= i:
-                label_freq_test[i].add(label_i)
-                break
-print("Distribution of label frequencies in test set:")
-for key in label_freq_test.keys():
-    print(f"Label frequency <= {key}: {len(label_freq_test[key])}")
-
 print("-----------------")
 
 # Distribution of entity types in predictions
@@ -227,12 +252,12 @@ avg_no_preds = 0
 for preds_i, golds_i in zip(test_df["reranked-predictions"], test_df["label-ids"]):
     avg_no_preds += len(preds_i)
     for pred in preds_i:
-        type_i = get_node_type(gnd, pred)
+        type_i = get_node_type(gnd_graph, pred)
         if type_i not in entity_types_pred:
             entity_types_pred[type_i] = 0
         entity_types_pred[type_i] += 1
     for gold in golds_i:
-        type_i = get_node_type(gnd, gold)
+        type_i = get_node_type(gnd_graph, gold)
         if type_i not in entity_types_gold:
             entity_types_gold[type_i] = 0
         entity_types_gold[type_i] += 1
@@ -259,35 +284,95 @@ meteor = load('meteor')
 rouge = load('rouge')
 
 gold_labels = test_df["label-names"].apply(lambda x: f"{SEP_TOKEN} ".join(x))
-raw_preds = test_df["raw_predictions"]
 
-bert_results = bertscore.compute(
-    predictions=raw_preds, 
-    references=gold_labels, 
-    model_type="bert-base-multilingual-cased", 
-    lang="de"
-)
-bert_results = {
-    "precision": mean(bert_results["precision"]),
-    "recall": mean(bert_results["recall"]),
-    "f1": mean(bert_results["f1"])
+if "raw_predictions" in test_df.columns:
+    raw_preds = test_df["raw_predictions"]
+
+    bert_results = bertscore.compute(
+        predictions=raw_preds, 
+        references=gold_labels, 
+        model_type="bert-base-multilingual-cased", 
+        lang="de"
+    )
+    bert_results = {
+        "precision": mean(bert_results["precision"]),
+        "recall": mean(bert_results["recall"]),
+        "f1": mean(bert_results["f1"])
+    }
+    print(f"BERTScore: {bert_results}")
+    all_metrics_dict["bertscore"] = bert_results
+
+    meteor_results = meteor.compute(
+        predictions=raw_preds, 
+        references=gold_labels
+    )
+    print(f"Meteor: {meteor_results}")
+    all_metrics_dict["meteor"] = float(meteor_results['meteor'])
+
+    rouge_results = rouge.compute(
+        predictions=raw_preds, 
+        references=gold_labels
+    )
+    print(f"Rouge: {rouge_results}")
+    all_metrics_dict["rouge"] = {k: float(v) for k, v in rouge_results.items()}
+
+# Group Labels by their similarity to the title.
+sent_model = SentenceTransformer(config["sentence_transformer_model"])
+tokenizer = sent_model.tokenizer
+
+idnl2index = {}
+index2idn = {}
+i = 0
+for idns in tqdm(test_df["label-ids"]):
+    for idn in idns:
+        if idn not in idnl2index:
+            idnl2index[idn] = i
+            index2idn[i] = idn
+            i += 1
+
+emb_title =  sent_model.encode(test_df["title"], batch_size=256, show_progress_bar=True)
+gold_strings = [get_pref_label(gnd_graph, idn) for idn in idnl2index.keys()]
+emb_gold = sent_model.encode(gold_strings, batch_size=256, show_progress_bar=True)
+
+similarity_dict = {}
+
+for i, row in tqdm(test_df.iterrows(), total=len(test_df)):
+    gold_labels = row["label-ids"]
+    for g in gold_labels:
+        g_i = idnl2index[g]
+        sim = sent_model.similarity(emb_title[i], emb_gold[g_i])
+        correct = g in row["predictions"]
+        similarity_dict[(row["title"], g)] = {
+            "similarity": sim,
+            "correct": correct,
+        }
+
+grouped_sim = {
+    "not-similar": [],
+    "somewhat-similar": [],
+    "similar": [],
+    "very-similar": [],
 }
-print(f"BERTScore: {bert_results}")
-all_metrics_dict["bertscore"] = bert_results
 
-meteor_results = meteor.compute(
-    predictions=raw_preds, 
-    references=gold_labels
-)
-print(f"Meteor: {meteor_results}")
-all_metrics_dict["meteor"] = float(meteor_results['meteor'])
+for (title, label_name), value in similarity_dict.items():
+    sim = value["similarity"]
+    correct = value["correct"]
+    if sim < 0.25:
+        grouped_sim["not-similar"].append(correct)
+    elif sim < 0.5:
+        grouped_sim["somewhat-similar"].append(correct)
+    elif sim < 0.75:
+        grouped_sim["similar"].append(correct)
+    else:
+        grouped_sim["very-similar"].append(correct)
 
-rouge_results = rouge.compute(
-    predictions=raw_preds, 
-    references=gold_labels
-)
-print(f"Rouge: {rouge_results}")
-all_metrics_dict["rouge"] = {k: float(v) for k, v in rouge_results.items()}
+for group, values in grouped_sim.items():
+    grouped_sim[group] = mean(values) if values else 0.0
+
+print("Performance grouped by similarity to title:")
+for group, value in grouped_sim.items():
+    print(f"{group}: {value}")
+all_metrics_dict["similarity_to_title"] = grouped_sim
 
 # Save all metrics to a YAML file
 file_name = os.path.basename(pred_file).split(".")[0]
