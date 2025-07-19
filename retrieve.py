@@ -15,7 +15,6 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 parser = argparse.ArgumentParser(description="Train a model on the GND dataset.")
 parser.add_argument("--data_dir", type=str, help="Path to the GND dataset directory.")
-parser.add_argument("--gnd_graph", type=str, help="Path to the GND graph file (pickle).")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--result_dir", type=str, help="Path to the result directory.")
 parser.add_argument("--name", type=str, help="Name of the experiment.")
@@ -29,7 +28,6 @@ parser.add_argument("--title_wise", type=bool, default=False, help="Use Title-to
 
 arguments = parser.parse_args()
 data_dir = arguments.data_dir
-gnd_graph = arguments.gnd_graph
 config_path = arguments.config
 result_dir = arguments.result_dir
 exp_name = arguments.name
@@ -52,6 +50,10 @@ if os.path.exists(result_dir):
     exit(1)
 os.makedirs(result_dir)
 
+# Load GND graph
+gnd_path = config["graph_path"]
+gnd_graph = pickle.load(open(gnd_path, "rb"))
+
 # Load GND dataset
 gnd_ds = GNDDataset(
     data_dir=data_dir,
@@ -67,8 +69,7 @@ retriever = Retriever(
     device=DEVICE,
 )
 
-# Load GND graph
-gnd_graph = pickle.load(open(gnd_graph, "rb"))
+
 if index_path is not None and label_mapping_path is not None:
     index = pickle.load(open(index_path, "rb"))
     mapping = pickle.load(open(label_mapping_path, "rb"))

@@ -12,32 +12,26 @@ from tqdm import tqdm
 
 from gnd_dataset import GNDDataset
 from retriever import Retriever
-from utils import load_model, generate_predictions, get_label_mapping, map_labels, process_output, SEP_TOKEN
-from prompt_str import SYSTEM_PROMPT, USER_PROMPT
+from utils import load_model, generate_predictions, map_labels, process_output, SEP_TOKEN
+from prompt_str import SYSTEM_PROMPT, USER_PROMPT, CONTEXT_PROMPT
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 transformers.logging.set_verbosity_error()
 
 parser = argparse.ArgumentParser(description="Train a model on the GND dataset.")
-parser.add_argument("--data_dir", type=str, help="Path to the GND dataset directory.")
-parser.add_argument("--gnd_graph", type=str, help="Path to the GND graph file (pickle).")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--result_dir", type=str, help="Path to the result directory.")
 parser.add_argument("--hard-prompt", action="store_true", help="Only hard prompt the model.", default=False)
-parser.add_argument("--hard_prompt_model", help="Name of the model to use.", default=None)
 parser.add_argument("--index", type=str, help="Path to the index file.")
-parser.add_argument("--mapping", type=str, help="Path to the label mapping file.")
+parser.add_argument("--mapping", type=str, help="Path to the mapping file.")
 parser.add_argument("--split", type=str, help="Split to use for evaluation.", default="test")
 parser.add_argument("--checkpoint", type=str, help="Checkpoint to use for evaluation.", default="best_model")
 parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
 
 arguments = parser.parse_args()
-data_dir = arguments.data_dir
-gnd_graph = arguments.gnd_graph
 config_path = arguments.config
 result_dir = arguments.result_dir
 do_hard_prompt = arguments.hard_prompt
-hard_prompt_model = arguments.hard_prompt_model
 index_path = arguments.index
 mapping_path = arguments.mapping
 split = arguments.split
@@ -52,11 +46,6 @@ with open(config_path, "r") as f:
 
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
-if do_hard_prompt:
-    if hard_prompt_model is not None:
-        model_name = hard_prompt_model
-    model_str = model_name.split("/")[-1]
-    exp_name = f"{model_str}-hard-prompt"
     
 result_dir = os.path.join(result_dir, exp_name)
 
@@ -64,8 +53,11 @@ if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
 # Load GND graph
-gnd_graph = pickle.load(open(gnd_graph, "rb"))
+gnd_path  = config["graph_path"]
+gnd_graph = pickle.load(open(gnd_path, "rb"))
 
+
+data_dir = config["dataset_path"]
 # Load GND dataset
 gnd_ds = GNDDataset(
     data_dir=data_dir,
@@ -75,7 +67,7 @@ gnd_ds = GNDDataset(
 )
 
 if do_hard_prompt:
-    test_ds = gnd_ds["test"]
+    test_ds = gnd_ds[split]
     raw_predictions = []
     count = 0
     pipe = pipeline(
@@ -86,8 +78,16 @@ if do_hard_prompt:
     )
     for row in tqdm(test_ds):
         title = row["title"]
+
+        if config["context"]["context_type"] is not None:
+            keywords = row["context_str"]
+            keywords = [kw.strip() for kw in keywords if kw.strip()]
+            keywords_str = SEP_TOKEN.join(keywords)
+            system_prompt = SYSTEM_PROMPT + CONTEXT_PROMPT.format(keywords_str)
+        else:
+            system_prompt = SYSTEM_PROMPT
         messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": USER_PROMPT.format(title)},
         ]
         outputs = pipe(messages, num_return_sequences=1, do_sample=True, temperature=0.7)
@@ -106,7 +106,7 @@ else:
 
     model, tokenizer = load_model(checkpoint_path, config=config, device=DEVICE, data_parallel=True)
 
-    gnd_ds.inference_tokenize_datasets(tokenizer=tokenizer, splits=[split])
+    gnd_ds.inference_tokenize_datasets(tokenizer=tokenizer, splits=[split], with_context=config["context"]["in_prompt"], max_context=config["context"]["n_context"])
     test_ds = gnd_ds[split]
 
     raw_predictions = generate_predictions(
@@ -149,5 +149,8 @@ pred_df = pd.DataFrame(
         "title": test_ds["title"],
     }
 )
-
-pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-checkpoint-{checkpoint}-seed-{arguments.seed}.csv"), index=False)
+if do_hard_prompt:
+    chp_str = "hard_prompt"
+else:
+    chp_str = f"checkpoint-{checkpoint}"
+pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-{chp_str}-seed-{arguments.seed}.csv"))
