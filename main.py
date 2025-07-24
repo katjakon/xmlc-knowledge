@@ -9,10 +9,11 @@ import torch
 import wandb
 
 from gnd_dataset import GNDDataset
+from gnd_graph import GNDGraph
+from data_collator import DataCollator
 from trainer import Trainer
 from retriever import Retriever
-from utils import init_prompt_model, generate_predictions, get_label_mapping, map_labels, SEP_TOKEN
-
+from utils import init_prompt_model, generate_predictions, map_labels, SEP_TOKEN
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -50,6 +51,7 @@ os.makedirs(res_dir)
 # Load GND graph
 gnd_path  = config["graph_path"]
 gnd_graph = pickle.load(open(gnd_path, "rb"))
+gnd_graph = GNDGraph(gnd_graph)
 
 model_name = config["model_name"]
 
@@ -70,10 +72,34 @@ gnd_ds = GNDDataset(
 )
 
 # Split the dataset into train, validation, and test sets
-
 train_ds = gnd_ds["train"] 
 valid_ds = gnd_ds["validate"]
 test_ds = gnd_ds["test"]
+
+retriever_model = config["sentence_transformer_model"]
+retriever = Retriever(
+    retriever_model=retriever_model,
+    graph=gnd_graph,
+    device=DEVICE,
+)
+
+index_path = config["context"].get("index_path")
+mapping_path = config["context"].get("mapping_path")
+
+if os.path.exists(index_path) and os.path.exists(mapping_path):
+    retriever.load_search_index(
+        mapping_path=mapping_path,
+        index_path=index_path
+    )
+else:
+    retriever.fit()
+
+data_collator = DataCollator(
+    tokenizer=tokenizer,
+    graph=gnd_graph,
+    config=config,
+    device=DEVICE,
+)
 
 if dev:
     # For development, use a smaller subset of the dataset
@@ -109,15 +135,14 @@ wandb.init(
           "params": num_trained_params,
       })
 
-trainer = Trainer(config)
+trainer = Trainer(config, data_collator)
 trainer.train(
     model=model,
     tokenizer=tokenizer,
     train_dataset=train_ds,
     eval_dataset=valid_ds,
-    output_dir=output_dir,
+    output_dir=output_dir
 )
-
 
 raw_predictions = generate_predictions(
     model=model,
@@ -133,22 +158,9 @@ for pred_str in raw_predictions:
     processed_predictions.append(pred_str)
 
 
-# Map raw labels to GND labels
-label_strings, label_mapping = get_label_mapping(gnd_graph)
-
-retriever_model = config["sentence_transformer_model"]
-retriever = Retriever(
-    retriever_model=retriever_model,
-    device=DEVICE,
-)
-
-index = retriever.fit(labels=label_strings, batch_size=512)
-
 mapped_predictions = map_labels(
     prediction_list=processed_predictions,
-    index=index,
-    retriever=retriever,
-    label_mapping=label_mapping
+    retriever=retriever
 )
 
 

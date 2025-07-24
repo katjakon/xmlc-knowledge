@@ -7,7 +7,7 @@ import networkx as nx
 from tqdm import tqdm
 import pandas as pd
 
-from utils import get_pref_label, strip_uri, SEP_TOKEN
+from utils import strip_uri, SEP_TOKEN
 
 
 class GNDDataset:
@@ -32,8 +32,8 @@ class GNDDataset:
         super().__init__()
         self.data_dir = data_dir
         self.config = config
-        self.sort_by_freq = bool(self.config["sort_by_freq"]) # Sort labels by frequency
-        self.use_k_freq_labels = int(self.config["use_k_freq_labels"]) # Only use k most frequent labels
+        self.sort_by_freq = bool(self.config.get("sort_by_freq", True)) # Sort labels by frequency
+        self.use_k_freq_labels = int(self.config.get("use_k_freq_labels", 0)) # Only use k most frequent labels
         self.gnd_graph = gnd_graph
         if load_from_disk:
             self.dataset = self.load_from_disk(self.data_dir)
@@ -94,11 +94,11 @@ class GNDDataset:
             # Subsample the dataset
             if split == "train":
                 # Subsample the training set
-                df = df.sample(frac=self.config["train_subsample_ratio"], random_state=42)
+                df = df.sample(frac=self.config.get("train_subsample_ratio", 1.0), random_state=42)
                 train_df = df
             elif split == "validate":
                 # Subsample the validation set
-                df = df.sample(frac=self.config["validate_subsample_ratio"], random_state=42)
+                df = df.sample(frac=self.config.get("validate_subsample_ratio", 1.0), random_state=42)
                 validate_df = df
             elif split == "test":
                 test_df = df
@@ -107,7 +107,7 @@ class GNDDataset:
         for split_df in [train_df, validate_df, test_df]:
             split_df["label-ids"] = split_df["label-ids"].apply(strip_uri)
             split_df["label-names"] = split_df["label-ids"].apply(
-                lambda idns: [get_pref_label(self.gnd_graph, label) for label in idns if label in self.gnd_graph.nodes]
+                lambda idns: [self.gnd_graph.pref_label_name(label) for label in idns if label in self.gnd_graph.nodes]
             )
             # Get label frequency
             if self.sort_by_freq:
@@ -177,7 +177,7 @@ class GNDDataset:
             )
             # Map to label names
             context_str = [
-                [get_pref_label(self.gnd_graph, idn) for idn in idns if idn in self.gnd_graph.nodes]
+                [self.gnd_graph.pref_label_name(idn) for idn in idns if idn in self.gnd_graph.nodes]
                 for idns in context_idns
             ]
             context_ids = []

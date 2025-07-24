@@ -1,17 +1,20 @@
 import faiss
+import pickle
 from sentence_transformers import SentenceTransformer
-from utils import k_hop_neighbors
 
 class Retriever:
 
-    def __init__(self, retriever_model, M=200, device=None) -> None:
+    def __init__(self, retriever_model, graph, M=200, device=None) -> None:
         self.retriever = SentenceTransformer(retriever_model)
         if device is not None:
             self.retriever.to(device)
         self.dim = self.retriever.get_sentence_embedding_dimension()
         self.M = M
+        self.index = None
+        self.mapping = None
+        self.graph = graph
     
-    def retrieve(self, mapping, index, texts, top_k=10, batch_size=256, title_wise=False, remove_diagonal=False):
+    def retrieve(self, texts, top_k=10, batch_size=256):
         """
         mapping: dict
         texts: list of strings
@@ -22,36 +25,41 @@ class Retriever:
         similarity: np.ndarray of shape (len(texts), top_k)
         indices: np.ndarray of shape (len(texts), top_k)
         """
+        if self.index is None or self.mapping is None:
+            raise ValueError("Index  or Mapping have not been created or loaded yet.")
         text_embeddings = self.retriever.encode(texts, show_progress_bar=False, batch_size=batch_size)
-        similarity, indices = index.search(text_embeddings, top_k)
-        if remove_diagonal:
-            for i in range(len(texts)):
-                filter_indices = [idx for idx in indices[i] if idx != i]
-                indices[i] = filter_indices
-        if title_wise: # Title retrieval returns lists of identifiers per index.
-            label_idn = [[idn for label_idn_list in map(lambda idx: mapping[idx], top_indices) for idn in label_idn_list] for top_indices in indices]
-        else: # Label retrieval returns only one identifier per index.
-            label_idn = [list(map(lambda idx: mapping[idx], top_indices)) for top_indices in indices]
-        return similarity, label_idn
+        distance, indices = self.index.search(text_embeddings, top_k)
+        # if remove_diagonal:
+        #     for i in range(len(texts)):
+        #         filter_indices = [idx for idx in indices[i] if idx != i]
+        #         indices[i] = filter_indices
+        # if title_wise: # Title retrieval returns lists of identifiers per index.
+        #     label_idn = [[idn for label_idn_list in map(lambda idx: self.mapping[idx], top_indices) for idn in label_idn_list] for top_indices in indices]
+        # else: # Label retrieval returns only one identifier per index.
+        label_idn = [list(map(lambda idx: self.mapping[idx], top_indices)) for top_indices in indices]
+        return distance, label_idn
     
-    def fit(self, labels, batch_size=256):
-        index = faiss.IndexHNSWFlat(self.dim, self.M)
-        label_embeddings = self.retriever.encode(labels, show_progress_bar=True, batch_size=batch_size)
-        index.add(label_embeddings)
-        return index
+    def fit(self, batch_size=256, with_alt_labels=False):
+        label_strings, mapping = self.graph.mapping(with_alt_labels=with_alt_labels)
+        self.index = faiss.IndexHNSWFlat(self.dim, self.M)
+        label_embeddings = self.retriever.encode(label_strings, show_progress_bar=True, batch_size=batch_size)
+        self.index.add(label_embeddings)
+        self.mapping = mapping
+        return self.index
     
-    def get_neighbors(self, list_idns, graph, k, relation=None):
+    def get_neighbors(self, list_idns, k, relation=None):
         retrieved_labels_plus = []
         for top_labels in list_idns:
             extended_labels = set()
             for label_idn in top_labels:
                 extended_labels.add(label_idn)
-                neighbors = k_hop_neighbors(graph, label_idn, k, relation)
+                neighbors = self.graph.neighborhood(label_idn, k=k, relation=relation)
+                neighbors = list(neighbors)
                 extended_labels.update(neighbors)
             retrieved_labels_plus.append(list(extended_labels))
         return retrieved_labels_plus
     
-    def retrieve_with_neighbors(self, graph, mapping, index, texts, k=2, top_k=10, batch_size=256, relation=None, title_wise=False, remove_diagonal=False):
+    def retrieve_with_neighbors(self, texts, k=2, top_k=10, batch_size=256, relation=None):
         """
         graph: networkx.Graph
         mapping: dict
@@ -65,13 +73,40 @@ class Retriever:
         retrieved_labels_plus: list of list of strings
         """
         _, idns = self.retrieve(
-            mapping=mapping,
             texts=texts,
             top_k=top_k,
-            batch_size=batch_size,
-            index=index,
-            title_wise=title_wise,
-            remove_diagonal=remove_diagonal)
-        retrieved_labels_plus = self.get_neighbors(idns, graph, k, relation)
+            batch_size=batch_size)
+        retrieved_labels_plus = self.get_neighbors(idns, k, relation)
         return retrieved_labels_plus
+    
+    def load_search_index(self, index_path, mapping_path):
+        """
+        Loads a search index from a file.
+        
+        Args:
+            path (str): Path to the index file.
+        
+        Returns:
+            faiss.IndexHNSWFlat: Loaded index.
+
+        """
+        self.index = pickle.load(open(index_path, "rb"))
+        self.mapping = pickle.load(open(mapping_path, "rb"))
+        return self.index
+    
+    def save_search_index(self, index_path, mapping_path):
+        """
+        Saves the search index to a file.
+        
+        Args:
+            path (str): Path to save the index file.
+        """
+        if self.index is None:
+            raise ValueError("Index has not been created or loaded yet.")
+        with open(index_path, "wb") as f:
+            pickle.dump(self.index, f)
+        with open(mapping_path, "wb") as f:
+            pickle.dump(self.mapping, f)
+    
+    
                 

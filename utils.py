@@ -18,71 +18,6 @@ def strip_uri(uris, prefix="<http://d-nb.info/gnd/", suffix=">"):
     return [uri.removeprefix(prefix).removesuffix(suffix)
             for uri in uris]
 
-def get_pref_label(graph, node_id):
-    node_data = graph.nodes.get(node_id)
-    if node_data is None:
-        return None
-    prefered_name = node_data.get("pref", None)
-    if prefered_name is not None:
-        return list(prefered_name)[0]
-    else:
-        return None
-
-def get_alt_labels(graph, node_id):
-    node_data = graph.nodes.get(node_id)
-    if node_data is None:
-        return []
-    alternative_names = node_data.get("alt", None)
-    if alternative_names is not None:
-        return list(alternative_names)
-    else:
-        return []
-
-def get_relation_type(graph, head, tail):
-    edge_data = graph.edges.get((head, tail))
-    if edge_data is not None:
-        return edge_data.get("relation")
-    else:
-        return None
-
-def get_node_type(graph, node_id):
-    node_data = graph.nodes.get(node_id)
-    if node_data is not None:
-        return node_data.get("type")
-    else:
-        return None
-
-def k_hop_neighbors(graph, node_id, k, relation=None):
-    neighbors = set()
-    if k == 0 or node_id not in graph.nodes:
-        return neighbors
-    for neighbor in graph.neighbors(node_id):
-        if relation is not None:
-            rel_type = get_relation_type(graph, node_id, neighbor)
-            if rel_type != relation:
-                continue
-        neighbors.add(neighbor)
-        neighbors.update(k_hop_neighbors(graph, neighbor, k-1))
-    return neighbors
-
-def get_label_mapping(graph, use_alt_labels=False):
-    label_mapping = {}
-    label_strings = []
-    counter = 0
-    for node_id in graph.nodes:
-        label = get_pref_label(graph, node_id)
-        if label is not None:
-            label_strings.append(label)
-            label_mapping[counter] = node_id
-            counter += 1
-        if use_alt_labels:
-            alt_labels = get_alt_labels(graph, node_id)
-            for alt_label in alt_labels:
-                label_strings.append(alt_label)
-                label_mapping[counter] = node_id
-                counter += 1
-    return label_strings, label_mapping
-
 def get_title_mapping(title_ds):
     title_mapping = {}
     title_strings = []
@@ -171,86 +106,6 @@ def process_output(text):
         text = text[0].split(" ")
     return [keyword for keyword in text if keyword]
 
-def tokenize(batch, tokenizer, suffix="", prefix="", max_length=55):
-
-    texts = [
-        f"{prefix}{item['title']}{suffix}"
-        for item in batch
-        ]
-
-    labels = [f"{SEP_TOKEN} ".join(item['label-names']) for item in batch]
-
-    tokenized_inputs = tokenizer(
-        texts,
-        padding=False,  # No padding yet
-        truncation=True,  
-        max_length=max_length,  # Truncate to max_length
-        add_special_tokens=False,
-        return_attention_mask=False,
-    )
-
-    input_ids = [
-        [tokenizer.bos_token_id] + input_id
-        for input_id in tokenized_inputs['input_ids']
-    ]
-
-    input_lengths = torch.tensor([len(input_id) for input_id in input_ids])
-
-    # Tokenize labels
-    tokenized_labels = tokenizer(
-        labels,
-        padding=False,  # No padding yet
-        truncation=False,  # Do not truncate
-        add_special_tokens=False, 
-        return_attention_mask=False,
-    )
-    label_ids = [
-        label_id + [tokenizer.eos_token_id]
-        for label_id in tokenized_labels['input_ids']
-    ]
-
-    # Concatenate input IDs and label IDs
-    full_ids = [
-        torch.tensor(input_id + label_id)
-        for input_id, label_id in zip(input_ids, label_ids)
-    ]
-    full_ids = torch.nn.utils.rnn.pad_sequence(full_ids, batch_first=True, padding_value=tokenizer.pad_token_id)
-    labels = torch.full_like(full_ids, fill_value=-100)  # Initialize with -100
-
-    for i, length in enumerate(input_lengths):
-        labels[i, length:] = full_ids[i, length:]  # Replace target positions with actual values
-
-    attention_mask = (full_ids != tokenizer.pad_token_id).long()
-    labels[~attention_mask.bool()] = -100  # Set padding positions in labels to -100
-    return {"input_ids": full_ids, "labels": labels, "attention_mask": attention_mask, "seq_lengths": input_lengths}
-
-def inference_tokenize(batch, tokenizer, suffix="", prefix=""):
-    texts = f"{prefix}{batch['title']}{suffix}"
-    tokenized_inputs = tokenizer(
-        texts,
-        padding=False,  # No padding yet
-        truncation=False,  # Do not truncate
-        add_special_tokens=False,
-        return_attention_mask=False,
-    )
-    input_ids = torch.tensor([tokenizer.bos_token_id] + tokenized_inputs['input_ids'])
-    input_lengths = torch.tensor(len(input_ids))
-    attention_mask = (input_ids != tokenizer.pad_token_id).long()
-    return {"input_ids": input_ids, "attention_mask": attention_mask, "seq_lengths": input_lengths}
-
-def tokenize_context(batch, tokenizer):
-    strings = [SEP_TOKEN.join(item) for item in batch["context_str"]]
-    tokenized_context = tokenizer(
-        strings,
-        padding=False,  # No padding yet
-        truncation=False,  # Do not truncate
-        add_special_tokens=False,
-        return_attention_mask=False,
-    )
-    context_length = torch.tensor([len(context) for context in tokenized_context['input_ids']])
-    context_ids = torch.nn.utils.rnn.pad_sequence(tokenized_context["input_ids"], batch_first=True, padding_value=tokenizer.pad_token_id)
-    return {"context_ids": context_ids, "context_lengths": context_length}
-
 def init_tokenizer(model_name):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
@@ -290,7 +145,7 @@ def generate_predictions(model, tokenizer, dataset, device="cuda"):
     model.eval()
     predictions = []
     for title_batch in tqdm(dataset, desc="Generating labels..."):
-        title_batch = {k: torch.tensor(v).to(device).unsqueeze(0) for k, v in title_batch.items() if k in BATCH_KEYS}
+        title_batch = {k: v.to(device).unsqueeze(0) for k, v in title_batch.items() if k in BATCH_KEYS}
         with torch.no_grad():
             if isinstance(model, torch.nn.DataParallel):
                 gen_model = model.module
@@ -305,14 +160,12 @@ def generate_predictions(model, tokenizer, dataset, device="cuda"):
         predictions.append(generated_text)
     return predictions
 
-def map_labels(prediction_list, index, retriever, label_mapping, k=1):
+def map_labels(prediction_list, retriever, k=1):
     mapped_predictions = []
     for pred_list in tqdm(prediction_list, desc="Mapping predictions to GND labels"):
         current_mapping = []
         for pred in pred_list:
             distance, idns = retriever.retrieve(
-                mapping=label_mapping,
-                index=index,
                 texts=[pred],
                 top_k=k)
             idn_sim = zip(idns[0], distance[0])

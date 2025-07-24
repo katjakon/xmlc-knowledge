@@ -6,42 +6,28 @@ from statistics import mean
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from transformers import get_linear_schedule_with_warmup, AutoTokenizer, logging
+from transformers import get_linear_schedule_with_warmup, logging
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 import wandb
 
-from utils import tokenize, inference_tokenize, generate_predictions, tokenize_context, SEP_TOKEN
-from prompt_str import SUFFIX_PROMPT, PREFIX_PROMPT
+from utils import generate_predictions, SEP_TOKEN
 
+
+KEYS = ["label-string", "label-names", "title", "context_str"]
 logger = getLogger(__name__)
 
 logging.set_verbosity_error()
 
-def collate_fn(batch, tokenizer, config):
-    """
-    Custom collate function for dynamic padding.
-    Args:
-        batch: List of samples from the dataset.
-        tokenizer: Tokenizer to handle padding and attention masks.
-    Returns:
-        A dictionary with input_ids, attention_mask, and labels (if available).
-    """
-    input_batch = tokenize(batch, tokenizer, suffix=SUFFIX_PROMPT, prefix=PREFIX_PROMPT)
-
-    if config["context"].get("context_type") is not None:
-        context_batch = tokenize_context(batch, tokenizer)
-        input_batch.update(context_batch)
-    return input_batch
-
 class Trainer:
 
-    def __init__(self, config) -> None:
+    def __init__(self, config, data_collator) -> None:
         self.config = config
         self.model_name = config["model_name"]
         self.tokenizer = None
         self.prompt_config = self.config["prompt_config"]
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.data_collator = data_collator
         self.similarity_model = SentenceTransformer(self.config["sentence_transformer_model"])
         self.similarity_model.to(self.device)
     
@@ -71,9 +57,10 @@ class Trainer:
         )
         sims = []
         accs = []
-        for i, pred_str in tqdm(enumerate(predictions), desc="Evaluating generation...", leave=False):
-                labels = eval_dataset[i]["label-string"]
-                label_list = eval_dataset[i]["label-names"]
+        for i, record in tqdm(enumerate(eval_dataset), desc="Evaluating generation...", leave=False):
+                pred_str = predictions[i]
+                labels = record["label-string"]
+                label_list = record["label-names"]
                 # Process generated text
                 gen_embedding = self.similarity_model.encode(pred_str, convert_to_tensor=True)
                 label_embedding = self.similarity_model.encode(labels, convert_to_tensor=True)
@@ -108,24 +95,24 @@ class Trainer:
         model.to(self.device)
         self.tokenizer = tokenizer
         # Subsample for generation evaluation
-        gen_eval_ds = eval_dataset.select(range(200)).select_columns(["label-string", "label-names", "title"])
-        gen_eval_ds = gen_eval_ds.map(lambda x: inference_tokenize(
-            x, 
-            self.tokenizer, 
-            suffix=SUFFIX_PROMPT, 
-            prefix=PREFIX_PROMPT)
-        )
+        gen_eval_ds = eval_dataset.select(range(200)).select_columns([key for key in KEYS if key in eval_dataset.column_names])
         # Create DataLoader
+        gen_eval_dataloader = DataLoader(
+            gen_eval_ds, 
+            batch_size=1, 
+            shuffle=False, 
+            collate_fn=lambda x: self.data_collator(x, inference=True)
+        )
         train_dataloader = DataLoader(
             train_dataset, 
             batch_size=self.config["batch_size"], 
             shuffle=True, 
-            collate_fn=lambda x: collate_fn(x, self.tokenizer, config=self.config))
+            collate_fn=self.data_collator)
         eval_dataloader = DataLoader(
             eval_dataset,
             batch_size=self.config["batch_size"],
             shuffle=False,
-            collate_fn=lambda x: collate_fn(x, self.tokenizer, config=self.config))
+            collate_fn=self.data_collator)
 
         num_epochs = self.config["num_epochs"]
         log_steps = self.config["logging_steps"]
@@ -149,12 +136,14 @@ class Trainer:
         for epoch in range(num_epochs):
             model.train()
             for batch in tqdm(train_dataloader, desc=f"Epoch {epoch + 1}/{num_epochs}", leave=False):
+                global_step += 1
                 batch = {k: v.to(self.device) for k, v in batch.items()} 
                 optimizer.zero_grad()
                 outputs = model(**batch)
                 loss = outputs.loss
                 loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed)
                 loss.backward()
+
                 # Gradient clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                 optimizer.step()
@@ -170,7 +159,7 @@ class Trainer:
                     print(f"\nStep {global_step}: Loss {avg_loss} Learning Rate {lr}")
                 if global_step % eval_steps == 0:
                     if self.config["eval_generation"] is True:
-                        gen_sim, gen_acc = self.eval_generate(model, gen_eval_ds)
+                        gen_sim, gen_acc = self.eval_generate(model, gen_eval_dataloader)
                         wandb.log({"similarity": gen_sim})
                         wandb.log({"accuracy": gen_acc})
                         print(f"Generation Similarity: {gen_sim}")
@@ -186,6 +175,7 @@ class Trainer:
                             optimizer=optimizer,
                             output_dir=check_path)
                         print(f"Best model saved at step {global_step}")
+                        best_eval_loss = eval_loss
                 if global_step % save_steps == 0:
                     check_path = os.path.join(output_dir, f"checkpoint-{global_step}")
                     self.save_checkpoint(
@@ -193,6 +183,5 @@ class Trainer:
                                 scheduler=scheduler,
                                 optimizer=optimizer,
                                 output_dir=check_path)
-                global_step += 1
         wandb.finish()
 
