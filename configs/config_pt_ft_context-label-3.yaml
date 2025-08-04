@@ -1,8 +1,8 @@
 
 
 model_name: meta-llama/Llama-3.2-3B
-sentence_transformer_model: BAAI/bge-m3
-experiment_name: pt-txt-context-3-label
+sentence_transformer_model: KatjaK/gnd_retriever_100k
+experiment_name: pt-txt-finetuned-context-3-label
 checkpoint_path: pt_models
 graph_path: data/gnd.pickle
 dataset_path: datasets/labelwise-3
@@ -26,8 +26,8 @@ context:
   hops: 0 # Also include hops in the knowledge graph from retrieved instances
   title_wise: false # Whether to retrieve title-to-label or title-to-title
   relation: null # Choices: null (use all relations) "broader" or "related"
-  index_path: "data/label_index.pkl"
-  mapping_path: "data/label_mapping.pkl"
+  index_path: null
+  mapping_path: null
 
 prompt_config:
   num_prompt_tokens: 50

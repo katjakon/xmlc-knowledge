@@ -1,0 +1,15 @@
+
+sentence_transformer_model: "retriever/partial/checkpoint-17218"
+experiment_name: finetuned-retriever-partial
+checkpoint_path: models
+graph_path: data/gnd.pickle
+dataset_path: datasets/no_context
+
+context:
+  context_type: text # Choices: "text" or "graph". Use null if no context is needed.
+  top_k: 10 # How many instances to retrieve
+  hops: 0 # Also include hops in the knowledge graph from retrieved instances
+  title_wise: false # Whether to retrieve title-to-label or title-to-title
+  relation: null # Choices: null (use all relations) "broader" or "related"
+  index_path: "search_indices/partial-ft-label_index.pkl"
+  mapping_path: "search_indices/partial-ft-label_mapping.pkl"
