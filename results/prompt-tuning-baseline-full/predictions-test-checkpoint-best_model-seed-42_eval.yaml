@@ -20,10 +20,14 @@ label_frequencies:
     precision: 0.09663564781675017
     recall: 0.09484609878310665
     support: 813
+  1:
+    precision: 0.10073937153419593
+    recall: 0.0996611213801602
+    support: 704
   10:
-    precision: 0.12174267100977199
-    recall: 0.11714944935628975
-    support: 2665
+    precision: 0.13047655649500384
+    recall: 0.12442169027488013
+    support: 1961
   100:
     precision: 0.19722339786855916
     recall: 0.17363807164091793
@@ -32,14 +36,10 @@ label_frequencies:
     precision: 0.3172456780556854
     recall: 0.25976124300969267
     support: 2752
-  10000:
-    precision: 0.3796891183403388
-    recall: 0.37538179480236206
-    support: 216
-  100000:
-    precision: 0.3457555812575587
-    recall: 0.44476467227065364
-    support: 5
+  .inf:
+    precision: 0.3789449618253655
+    recall: 0.37690334913280704
+    support: 221
 entity_types:
   Sachbegriff:
     precision: 0.18732680098443386
@@ -64,15 +64,15 @@ entity_types:
     recall: 0.0
 avg_no_preds: 2.670192536249109
 bertscore:
-  precision: 0.8320976591943307
-  recall: 0.8051002628026281
-  f1: 0.8171380393247806
+  precision: 0.8320976589393072
+  recall: 0.805100262391757
+  f1: 0.817138039133513
 meteor: 0.33053145618207064
 rouge:
-  rouge1: 0.41588331134862355
-  rouge2: 0.1636587411888641
-  rougeL: 0.38618999002341614
-  rougeLsum: 0.38582416219722526
+  rouge1: 0.415873646940616
+  rouge2: 0.16378552675258506
+  rougeL: 0.3861074284692006
+  rougeLsum: 0.3858511957999912
 similarity_to_title:
   not-similar: 0.20910973084886128
   somewhat-similar: 0.21576178337039648
