@@ -15,7 +15,8 @@ from sentence_transformers import SentenceTransformer
 
 from reranker import BGEReranker
 from gnd_dataset import GNDDataset
-from utils import recall_at_k, precision_at_k, f1_at_k, get_node_type, get_pref_label, jaccard_similarity, weighted_precision, SEP_TOKEN
+from gnd_graph import GNDGraph
+from utils import recall_at_k, precision_at_k, f1_at_k, jaccard_similarity, weighted_precision, SEP_TOKEN
 
 
 
@@ -43,6 +44,7 @@ reranker = BGEReranker(reranker_str, device=DEVICE)
 # Load GND graph
 gnd_path = config["graph_path"]
 gnd_graph = pickle.load(open(gnd_path, "rb"))
+gnd_graph = GNDGraph(gnd_graph)
 
 # Load predictions file.
 test_df = pd.read_csv(pred_file)
@@ -71,7 +73,7 @@ for ids in test_df["label-ids"]:
     instance_names = []
     for i in ids:
         if i in gnd_graph.nodes:
-            i_pref = get_pref_label(gnd_graph, i)
+            i_pref = gnd_graph.pref_label_name(i)
             instance_names.append(i_pref)
     label_names.append(instance_names)
 test_df["label-names"] = label_names
@@ -160,9 +162,17 @@ for preds_i, golds_i in tqdm(test_df[["reranked-predictions", "label-ids"]].iter
         if gold not in correct:
             macro_metrics[gold]["fn"] += 1
 
-label_freq_grouped_prec = { freq: [] for freq in [0, 10, 100, 1000, 10000, 100000] }
-label_freq_grouped_rec = { freq: [] for freq in [0, 10, 100, 1000, 10000, 100000] }
-support_lf = { freq: 0 for freq in [0, 10, 100, 1000, 10000, 100000] }
+bins = [
+    (-float("inf"), 1),
+    (1, 2),
+    (2, 11),
+    (11, 101),
+    (101, 1001),
+    (1001,  float("inf"))
+]
+label_freq_grouped_prec = { end-1: [] for _, end in bins }
+label_freq_grouped_rec = { end-1: [] for _, end in bins }
+support_lf = {end-1: 0 for _, end in bins }
 entity_types = {}
 
 for label, values in macro_metrics.items():
@@ -173,31 +183,31 @@ for label, values in macro_metrics.items():
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
 
-    type_i = get_node_type(gnd_graph, label)
+    type_i = gnd_graph.node_type(label) 
     if type_i not in entity_types:
         entity_types[type_i] = {"precision": [], "recall": []}
     entity_types[type_i]["precision"].append(precision)
     entity_types[type_i]["recall"].append(recall)
-
-    sort_bins = sorted(label_freq_grouped_prec.keys())
     freq = label_freq.get(label, 0)
-    for i in sort_bins:
-        if freq <= i:
-            label_freq_grouped_prec[i].append(precision)
-            label_freq_grouped_rec[i].append(recall)
-            support_lf[i] += 1
+    for start, end in bins:
+        if freq >= start and freq < end:
+            freq_key = end - 1
+            label_freq_grouped_prec[freq_key].append(precision)
+            label_freq_grouped_rec[freq_key].append(recall)
+            support_lf[freq_key] += 1
             break
 
 # Distribution of frequency of labels in test set
-label_freq_test = {freq: set() for freq in [0, 10, 100, 1000, 10000, 100000] }
+label_freq_test = {end-1: set() for _, end in bins }
 for label in test_df["label-ids"]:
     for label_i in label:
-        label_i_freq = label_freq.get(label_i, 0)
-        sort_bins = sorted(label_freq_test.keys())
-        for i in sort_bins:
-            if label_i_freq <= i:
-                label_freq_test[i].add(label_i)
+        freq = label_freq.get(label_i, 0)
+        for start, end in bins:
+            if freq >= start and freq < end:
+                freq_key = end - 1
+                label_freq_test[freq_key].add(label_i)
                 break
+
 print("Distribution of label frequencies in test set:")
 for key in label_freq_test.keys():
     label_freq_test[key] = len(label_freq_test[key])
@@ -252,12 +262,12 @@ avg_no_preds = 0
 for preds_i, golds_i in zip(test_df["reranked-predictions"], test_df["label-ids"]):
     avg_no_preds += len(preds_i)
     for pred in preds_i:
-        type_i = get_node_type(gnd_graph, pred)
+        type_i = gnd_graph.node_type(pred)
         if type_i not in entity_types_pred:
             entity_types_pred[type_i] = 0
         entity_types_pred[type_i] += 1
     for gold in golds_i:
-        type_i = get_node_type(gnd_graph, gold)
+        type_i = gnd_graph.node_type(pred)
         if type_i not in entity_types_gold:
             entity_types_gold[type_i] = 0
         entity_types_gold[type_i] += 1
@@ -331,7 +341,7 @@ for idns in tqdm(test_df["label-ids"]):
             i += 1
 
 emb_title =  sent_model.encode(test_df["title"], batch_size=256, show_progress_bar=True)
-gold_strings = [get_pref_label(gnd_graph, idn) for idn in idnl2index.keys()]
+gold_strings = [gnd_graph.pref_label_name(idn) for idn in idnl2index.keys()]
 emb_gold = sent_model.encode(gold_strings, batch_size=256, show_progress_bar=True)
 
 similarity_dict = {}

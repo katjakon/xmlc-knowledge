@@ -23,7 +23,7 @@ def get_gnd_data(gnd):
         return response.json()
 
 path_gnd = "data/GND-Subjects-plus.ttl"
-out_path = "data/gnd.pickle"
+out_path = "data/gnd-new.pickle"
 metadata_path = "gnd_freq-used-meta-data.arrow"
 columns = ["entitaetentyp", "idn", "gnd_identifier"]
 gnd_meta = pd.read_feather(metadata_path, columns=columns)

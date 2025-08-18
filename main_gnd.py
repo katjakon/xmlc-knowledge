@@ -5,25 +5,23 @@ import yaml
 
 import torch
 import wandb
+from datasets import Dataset
 
-from gnd_dataset import GNDDataset
 from gnd_graph import GNDGraph
-from data_collator import DataCollator
+from data_collator import GraphDataCollator
 from trainer import Trainer
-from retriever import Retriever
-from utils import init_prompt_model, load_model
+from utils import init_prompt_model
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 parser = argparse.ArgumentParser(description="Train a model on the GND dataset.")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--dev", action="store_true", help="Run in development mode with a smaller dataset.")
-parser.add_argument("--load_from_pretrained", help="Path to a pretrained model to load from.", type=str, default=False)
-
+parser.add_argument("--alt_names", action="store_true", help="Include alternative names in the input.", default=False)
 arguments = parser.parse_args()
 config_path = arguments.config
 dev = arguments.dev
-load_from_pretrained = arguments.load_from_pretrained
+alt_names = arguments.alt_names
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
@@ -46,67 +44,39 @@ gnd_graph = GNDGraph(gnd_graph)
 
 model_name = config["model_name"]
 
-if load_from_pretrained:
-    # Load the model from a pretrained checkpoint
-    keys_to_load = config.get("load_pt_keys", None)
-    model, tokenizer = load_model(
-        checkpoint_path=load_from_pretrained,
-        config=config,
-        device=DEVICE,
-        load=keys_to_load,
-    )
-else:
-    model, tokenizer = init_prompt_model(
-        model_name=model_name,
-        prompt_config=config["prompt_config"],
-        tune_lm_head=False,
-    )
-    model = torch.nn.DataParallel(model)
-
-# Load GND dataset
-data_dir = config["dataset_path"]
-gnd_ds = GNDDataset(
-    data_dir=data_dir,
-    gnd_graph=gnd_graph,
-    config=config, 
-    load_from_disk=True,
+model, tokenizer = init_prompt_model(
+    model_name=model_name,
+    prompt_config=config["prompt_config"]
 )
 
+model = torch.nn.DataParallel(model)
+
+data_dict = {
+    "label": [],
+    "neighbors": [],
+    "alt-names": []
+}
+for node in gnd_graph.nodes(data=True):
+    idn, data = node
+    name = gnd_graph.pref_label_name(idn)
+    neighbors = [gnd_graph.pref_label_name(node_idn) for node_idn in gnd_graph .neighbors(idn)]
+    alt_names = gnd_graph.alt_label_names(idn)
+    if neighbors or alt_names:
+        data_dict["label"].append(name)
+        data_dict["neighbors"].append(neighbors)
+        data_dict["alt-names"].append(alt_names)
+
+ds = Dataset.from_dict(data_dict)
+ds = ds.train_test_split(test_size=0.05, seed=42, shuffle=True)
 # Split the dataset into train, validation, and test sets
-# train_size = range(100_000, len(gnd_ds["train"]))
-train_ds = gnd_ds["train"] # .select(train_size)  # Use a subset for development
-valid_ds = gnd_ds["validate"]
-test_ds = gnd_ds["test"]
+train_ds = ds["train"]
+valid_ds = ds["test"]
 
-retriever_model = config["sentence_transformer_model"]
-retriever = Retriever(
-    retriever_model=retriever_model,
-    graph=gnd_graph,
-    device=DEVICE,
-)
-
-index_path = config["context"].get("index_path")
-mapping_path = config["context"].get("mapping_path")
-
-if (
-    index_path is not None 
-    and mapping_path is not None 
-    and os.path.exists(index_path) 
-    and os.path.exists(mapping_path)
-    ):
-    retriever.load_search_index(
-        mapping_path=mapping_path,
-        index_path=index_path
-    )
-else:
-    retriever.fit(batch_size=1000)
-
-data_collator = DataCollator(
+data_collator = GraphDataCollator(
     tokenizer=tokenizer,
-    graph=gnd_graph,
     config=config,
     device=DEVICE,
-    retriever=retriever,
+    alt_names=alt_names,  # Set to True if you want to include alternative names in the input
 )
 
 if dev:
@@ -133,7 +103,7 @@ num_tokens = config["prompt_config"]["num_prompt_tokens"]
 
 wandb.init(
       # Set the project where this run will be logged
-      project="xmlc-knowledge-final",
+      project="xmlc-knowledge-general",
       name=f"{exp_name}",
       # Track hyperparameters and run metadata
       config={

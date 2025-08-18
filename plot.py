@@ -11,16 +11,16 @@ MT_METRCICS = [
     "rouge"
 ]
 MAPPED_METRICS = [
-    "precision@1",
-    "precision@3",
-    "precision@5",
-    "recall@1",
-    "recall@3",
-    "recall@5",
-    "f1@1",
-    "f1@3",
-    "f1@5",
-    "jaccard",
+    "precision",
+    # "precision@3",
+    # "precision@5",
+    "recall",
+    # "recall@3",
+    # "recall@5",
+    "f1",
+    # "f1@3",
+    # "f1@5",
+    # "jaccard",
     "weighted_precision",
 
 ]
@@ -30,27 +30,26 @@ entity_key = "entity_types"
 similarity_key = "similarity_to_title"
 
 eval_dir = [
-    # "results/prompt-tuning-baseline",
-    "results/hard-prompting-baseline",
-    "results/few-shot-baseline",
-    "results/finetuned-retriever-hp",
-    "results/retrieval-ft",
-    # "results/prompt-tuning-text-context-3-label",
-    # "results/prompt-tuning-text-context-3-label-hop-1",
-    # "results/prompt-tuning-context-3-label-in-prompt"
-    "results/hard-prompting-context-label-3/",
-    "results/hard-prompting-context-label-3-hop-1/",
-    # "results/hard-prompting-context-label-5/",
-    # "results/hard-prompting-context-label-5-hop-1/",
-    # "results/hard-prompting-context-label-10/",
-    # "results/hard-prompting-context-label-10-hop-1/",
-    # "results/hard-prompting-context-label-20/",
-    # "results/hard-prompting-context-label-20-hop-1/",
+    # "results/retrieval-ft-no-neighbors",
+    # "results/retrieval-no-neighbors",
+    # "results/finetuned-retriever-partial",
+    # "results/hard-prompting-context-label-5",
+    # "results/ft-hard-prompting-context-label-5",
+    "results/prompt-tuning-baseline-full",
+    # "results/pt-txt-context-3-label",
+    "results/prompt-tuning-from_gnd",
+    # "results/pt-from_gnd_w_alt",
+    "results/prompt-tuning-baseline-small",
+    "results/pt-from_gnd_small",
+    # "results/pt-from_gnd_fused",
+    # "results/few-shot-baseline",
+    # "results/hard-prompting-baseline"
+
 
 ]
 
 hue = "experiment"  # graph-based
-dir = "plots"
+dir = "plots_pt"
 
 def load_eval_data(file_path):
     with open(file_path, 'r') as file:
@@ -126,7 +125,7 @@ def get_similarity_to_title(eval_file):
 
 def plot(df, x, y, hue=None, title=None, xlabel=None, ylabel=None, dir=None):
     plt.figure(figsize=(16, 8))
-    sns.barplot(x=x, y=y, hue=hue, data=df)
+    sns.barplot(x=x, y=y, hue=hue, data=df, errorbar="sd")
     plt.xlabel(xlabel if xlabel else x)
     plt.ylabel(ylabel if ylabel else y)
     plt.xticks(rotation=90)

@@ -1,7 +1,7 @@
 
 
 model_name: meta-llama/Llama-3.2-3B-Instruct
-sentence_transformer_model: "retriever/testing/checkpoint-164204"
+sentence_transformer_model: KatjaK/gnd_retriever_full
 experiment_name: finetuned-retriever-hp # baseline-full-run
 checkpoint_path: models
 graph_path: data/gnd.pickle

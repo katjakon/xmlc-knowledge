@@ -3,7 +3,7 @@ import networkx as nx
 from typing import List, Dict, Any
 
 
-class GNDGraph(nx.Graph):
+class GNDGraph(nx.DiGraph):
 
     def __init__(self, incoming_graph_data=None) -> None:
         """
@@ -12,7 +12,7 @@ class GNDGraph(nx.Graph):
             nx_graph (networkx.Graph): A NetworkX graph representing the GND.
         """
         super().__init__(incoming_graph_data)
-        self.graph = incoming_graph_data
+        self.incoming_graph_data = incoming_graph_data
     
     def pref_label_name(self, node_id: str) -> str:
         """

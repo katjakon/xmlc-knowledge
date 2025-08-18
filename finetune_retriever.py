@@ -1,13 +1,8 @@
-from retriever import Retriever
-from utils import get_label_mapping, get_title_mapping
-import torch
 from sentence_transformers import SentenceTransformer,  losses, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from datasets import Dataset
-import os
 import pickle
 from tqdm import tqdm
 import yaml
-from utils import get_pref_label
 
 from gnd_dataset import GNDDataset
 
@@ -24,7 +19,8 @@ gnd_ds = GNDDataset(
     config=config,
     load_from_disk=True,
 )
-train_ds = gnd_ds["train"]
+subset = range(100_000)
+train_ds = gnd_ds["train"].select(subset)
 
 model = SentenceTransformer("BAAI/bge-m3")
 
@@ -58,7 +54,7 @@ eval_dataset = Dataset.from_dict(eval_dict)
 
 args = SentenceTransformerTrainingArguments(
     # Required parameter:
-    output_dir="retriever/testing",
+    output_dir="retriever/partial",
     # Optional training parameters:
     num_train_epochs=2,
     per_device_train_batch_size=32,
@@ -69,7 +65,7 @@ args = SentenceTransformerTrainingArguments(
     # Optional tracking/debugging parameters:
     save_total_limit=2,
     logging_steps=500,
-    run_name="testing",  # Will be used in W&B if `wandb` is installed
+    run_name="partial",  # Will be used in W&B if `wandb` is installed
 )
 
 loss = losses.MultipleNegativesRankingLoss(model)

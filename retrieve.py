@@ -14,11 +14,8 @@ from utils import get_label_mapping, get_title_mapping
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 parser = argparse.ArgumentParser(description="Train a model on the GND dataset.")
-parser.add_argument("--data_dir", type=str, help="Path to the GND dataset directory.")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--result_dir", type=str, help="Path to the result directory.")
-parser.add_argument("--name", type=str, help="Name of the experiment.")
-parser.add_argument("--batch_size", type=int, default=512, help="Batch size for predictions.")
 parser.add_argument("--index", type=str, help="Path to the index file.", default=None)
 parser.add_argument("--label_mapping", type=str, help="Path to label mapping file", default=None)
 parser.add_argument("--hops", type=int, default=None, help="Number of hops for neighbors.")
@@ -27,11 +24,8 @@ parser.add_argument("--alt_labels", type=bool, default=False, help="Use alternat
 parser.add_argument("--title_wise", type=bool, default=False, help="Use Title-to-Title mapping.")
 
 arguments = parser.parse_args()
-data_dir = arguments.data_dir
 config_path = arguments.config
 result_dir = arguments.result_dir
-exp_name = arguments.name
-batch_size = arguments.batch_size
 index_path = arguments.index
 label_mapping_path = arguments.label_mapping
 hops = arguments.hops
@@ -42,6 +36,9 @@ use_title_wise = arguments.title_wise
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
+
+exp_name = config["experiment_name"]
+batch_size = 1024
 
 result_dir = os.path.join(result_dir, exp_name)
 
@@ -54,11 +51,13 @@ os.makedirs(result_dir)
 gnd_path = config["graph_path"]
 gnd_graph = pickle.load(open(gnd_path, "rb"))
 
+data_dir = config["dataset_path"]
 # Load GND dataset
 gnd_ds = GNDDataset(
     data_dir=data_dir,
     gnd_graph=gnd_graph,
-    config=config
+    config=config,
+    load_from_disk=True,
 )
 test_ds = gnd_ds["test"]
 train_ds = gnd_ds["train"]

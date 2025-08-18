@@ -3,6 +3,7 @@ import os
 import pickle
 import yaml
 
+from datasets import Dataset
 import pandas as pd
 import torch
 import transformers
@@ -10,9 +11,10 @@ from transformers import  pipeline, set_seed
 from tqdm import tqdm
 
 from data_collator import DataCollator
+from gnd_graph import GNDGraph
 from gnd_dataset import GNDDataset
-from retriever import Retriever
 from reranker import BGEReranker
+from retriever import Retriever
 from utils import load_model, generate_predictions, map_labels, process_output, SEP_TOKEN
 from prompt_str import SYSTEM_PROMPT, USER_PROMPT, CONTEXT_PROMPT
 
@@ -22,6 +24,7 @@ transformers.logging.set_verbosity_error()
 parser = argparse.ArgumentParser(description="Predict labels for GND dataset using a model.")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--result_dir", type=str, help="Path to the result directory.")
+parser.add_argument("--data_dir", type=str, help="Path to the data directory.")
 parser.add_argument("--hard-prompt", action="store_true", help="Only hard prompt the model.", default=False)
 parser.add_argument("--index", type=str, help="Path to the index file.")
 parser.add_argument("--mapping", type=str, help="Path to the mapping file.")
@@ -37,9 +40,11 @@ index_path = arguments.index
 mapping_path = arguments.mapping
 split = arguments.split
 checkpoint = arguments.checkpoint
+data_dir = arguments.data_dir
 
 # Set random seed for reproducibility
 set_seed(arguments.seed)
+
 
 # Load config 
 with open(config_path, "r") as f:
@@ -56,16 +61,15 @@ if not os.path.exists(result_dir):
 # Load GND graph
 gnd_path  = config["graph_path"]
 gnd_graph = pickle.load(open(gnd_path, "rb"))
+gnd_graph = GNDGraph(gnd_graph)
 
-data_dir = config["dataset_path"]
 # Load GND dataset
-gnd_ds = GNDDataset(
-    data_dir=data_dir,
-    gnd_graph=gnd_graph,
-    config=config,
-    load_from_disk=True,
-)
-test_ds = gnd_ds[split] # .select(range(10))
+test_ds = pd.read_csv(
+    os.path.join(data_dir, "sci-ger-ideal.tsv.gz"), 
+    sep="\t", 
+    compression="gzip",
+    names=["title", "label_ids"])
+test_ds = Dataset.from_pandas(test_ds) #.select(range(10))
 
 retriever_model = config["sentence_transformer_model"]
 retriever = Retriever(
@@ -92,9 +96,16 @@ if do_hard_prompt:
         title = row["title"]
 
         if config["context"]["context_type"] is not None:
-            keywords = row["context_str"]
-            keywords = [kw.strip() for kw in keywords if kw.strip()]
-            keywords_str = SEP_TOKEN.join(keywords)
+            context_idns = retriever.retrieve_with_neighbors(
+                texts= [title],
+                top_k=config["context"]["top_k"],
+                k=config["context"]["hops"],
+                batch_size=1,
+            )
+            context_str = [
+                [gnd_graph.pref_label_name(idn) for idn in idn_list]
+                for idn_list in context_idns]
+            keywords_str = f"{SEP_TOKEN} ".join(context_str[0])
             system_prompt = SYSTEM_PROMPT + CONTEXT_PROMPT.format(keywords_str)
         else:
             system_prompt = SYSTEM_PROMPT
@@ -157,8 +168,6 @@ pred_df = pd.DataFrame(
     {
         "predictions": mapped_predictions,
         "raw_predictions": raw_predictions,
-        "label-ids": test_ds["label-ids"],
-        "label-names": test_ds["label-names"],
         "title": test_ds["title"],
     }
 )
@@ -169,8 +178,24 @@ pred_df = reranker.rerank(
     bs=200
 )
 
+# Reshape predictions necessary for QM.
+index_file = os.path.join(data_dir, "sci-ger-ideal.arrow")
+index_qm = pd.read_feather(index_file)
+
+doc_ids = {i: index_qm[index_qm["location"] == i]["idn"].values[0] for i in tqdm(range(pred_df.shape[0]), desc="Map indices to doc idn")}
+
+suggestions = []
+
+for i, row in tqdm(pred_df.iterrows(), total=pred_df.shape[0], desc="Reshaping predictions..."):
+    doc_id = doc_ids[i]
+    reranked_predictions = row["reranked-predictions"]
+    scores = row["scores"]
+    for rank, (label_id, score) in enumerate(zip(reranked_predictions, scores)):
+        suggestions.append({"doc_id": doc_id, "label_id": label_id, "score": score, "rank": rank + 1})
+suggestions_df = pd.DataFrame(suggestions)  # Convert to dataframe
 if do_hard_prompt:
     chp_str = "hard_prompt"
 else:
     chp_str = f"checkpoint-{checkpoint}"
 pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-{chp_str}-seed-{arguments.seed}.csv"))
+suggestions_df.to_feather(os.path.join(result_dir, f"suggestions.arrow"))

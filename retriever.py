@@ -5,9 +5,7 @@ from sentence_transformers import SentenceTransformer
 class Retriever:
 
     def __init__(self, retriever_model, graph, M=200, device=None) -> None:
-        self.retriever = SentenceTransformer(retriever_model)
-        if device is not None:
-            self.retriever.to(device)
+        self.retriever = SentenceTransformer(retriever_model, device=device)
         self.dim = self.retriever.get_sentence_embedding_dimension()
         self.M = M
         self.index = None

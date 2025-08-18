@@ -22,7 +22,7 @@ import torch
 from torch.nn import CrossEntropyLoss
 import torch.nn as nn
 
-from prompt_generators import RandomPromptGenerator, HiddenStatePromptGenerator, ContextPromptGenerator
+from prompt_generators import RandomPromptGenerator, HiddenStatePromptGenerator, ContextPromptGenerator, FusedPromptGenerator
 
 logger = logging.get_logger(__name__)
 
@@ -59,6 +59,8 @@ class BasePromptLlama(LlamaPreTrainedModel):
             self.prompt_generator = HiddenStatePromptGenerator(config=self.prompt_config)
         elif self.prompt_config["type"] == "context":
             self.prompt_generator = ContextPromptGenerator(config=self.prompt_config, embed=self.embed_tokens)
+        elif self.prompt_config["type"] == "fused":
+            self.prompt_generator = FusedPromptGenerator(config=self.prompt_config)
         else:
             raise ValueError(f"Unknown prompt type: {self.prompt_config['type']}")
         self.prompt_generator.to(self.embed_tokens.weight.device)
@@ -78,8 +80,9 @@ class BasePromptLlama(LlamaPreTrainedModel):
             if context_ids is None or context_lengths is None:
                 raise ValueError("context_ids and context_lenghts must be provided for text context prompts.")
             prefix = self.prompt_generator(hidden_states=hidden_states, context_ids=context_ids, seq_lengths=seq_lengths, context_lengths=context_lengths)
+        elif self.prompt_config["type"] == "fused":
+            prefix = self.prompt_generator(hidden_states=hidden_states, seq_lengths=seq_lengths)
         return prefix
-
 
     def forward(
             self,
@@ -116,7 +119,8 @@ class BasePromptLlama(LlamaPreTrainedModel):
 
             if inputs_embeds is None:
                 inputs_embeds = self.embed_tokens(input_ids)
-
+            batch_size = inputs_embeds.shape[0]
+            prompt_attention_mask = torch.ones(batch_size, self.num_prompt_tokens).to(self.device)
             if use_cache and past_key_values is None:
                 past_key_values = DynamicCache()
 
@@ -128,8 +132,7 @@ class BasePromptLlama(LlamaPreTrainedModel):
 
             if position_ids is None:
                 position_ids = cache_position.unsqueeze(0)
-            batch_size = inputs_embeds.shape[0]
-            prompt_attention_mask = torch.ones(batch_size, self.num_prompt_tokens).to(attention_mask.device)
+
             
             causal_mask = self._update_causal_mask(
                 attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
@@ -348,7 +351,7 @@ class GenerativePromptLlama(LlamaForCausalLM):
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.prompt_config = prompt_config
-        self.num_prompt_tokens = prompt_config["num_prompt_tokens"]
+        self.num_prompt_tokens = self.prompt_config["num_prompt_tokens"]
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -377,8 +380,30 @@ class GenerativePromptLlama(LlamaForCausalLM):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        batch_size = input_ids.shape[0]
+        prompt_attention_mask = torch.ones(batch_size, self.num_prompt_tokens).to(self.device)
+        if self.prompt_config["at_layer"] < 0:
+            inputs_embeds = self.model.embed_tokens(input_ids)
+            prefix = self.model.call_prompt(
+                hidden_states=inputs_embeds, 
+                seq_lengths=seq_lengths, 
+                context_ids=context_ids, 
+                context_lengths=context_lengths
+                )
+            attention_mask = torch.cat([
+                prompt_attention_mask,
+                attention_mask
+            ], dim=1)
+            inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)
+            input_ids = None  # input_ids are not needed when inputs_embeds are provided
+            if cache_position is not None:
+                cache_position = torch.arange(
+                    0, 
+                    inputs_embeds.shape[1], 
+                    device=inputs_embeds.device
+                )
+                position_ids = cache_position.repeat(position_ids.shape[0], 1) if position_ids is not None else cache_position.unsqueeze(0)
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -420,3 +445,5 @@ class GenerativePromptLlama(LlamaForCausalLM):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+    
+    

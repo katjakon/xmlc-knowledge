@@ -6,8 +6,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from utils import get_pref_label
-
 class BGEReranker:
 
     def __init__(self, model_path, device=None):
@@ -35,6 +33,7 @@ class BGEReranker:
                 input_ids=input_ids, 
                 attention_mask=attention_masks,
                 return_dict=True).logits.view(-1, ).float()
+            scores = torch.sigmoid(scores)  # Apply sigmoid to get probabilities
         return scores
     
     def tokenize(self, pair, max_len=128):
@@ -61,7 +60,7 @@ class BGEReranker:
             idn_i_list = row['predictions']
             title_i = row['title']
             for idn_i in idn_i_list:
-                idn_i_str = get_pref_label(gnd, idn_i)
+                idn_i_str = gnd.pref_label_name(idn_i)
                 if idn_i_str is None:
                     continue
                 pair_dict["pair"].append((title_i, idn_i_str))
@@ -107,11 +106,14 @@ class BGEReranker:
 
         index_unique = range(data_frame.shape[0])
         reranked_predictions = []
+        scores = []
         for i in index_unique:
             df_i = df_sim[df_sim["title-idx"] == i]
             df_i = df_i.sort_values(by="score", ascending=False)
             reranked_predictions.append(df_i["label-ids"].tolist())
+            scores.append(df_i["score"].tolist())
         
         data_frame["reranked-predictions"] = reranked_predictions
+        data_frame["scores"] = scores
 
         return data_frame

@@ -122,14 +122,32 @@ def init_prompt_model(model_name, prompt_config, tune_lm_head=True):
     model.model.add_prompt()
     return model, tokenizer
 
-def load_model(checkpoint_path, config, device, data_parallel=True):
+def load_model(checkpoint_path, config, device, data_parallel=True, load=None):
+    """
+    Load a model from a checkpoint.
+
+    Args:
+        checkpoint_path (str): Path to the checkpoint file.
+        config (dict): Configuration dictionary containing model and prompt configurations.
+        device (str): Device to load the model on, e.g., "cuda" or "cpu".
+        data_parallel (bool): Whether to wrap the model in DataParallel. Default is True.
+        load (list, optional): List of keys to load from the checkpoint. If None, all tensors are loaded.
+    Returns:
+        model (torch.nn.Module): The loaded model.
+        tokenizer (transformers.PreTrainedTokenizer): The tokenizer associated with the model.
+    """
     prompt_config = config["prompt_config"]
     model_name = config["model_name"]
     model, tokenizer = init_prompt_model(model_name, prompt_config)
     tensors = {}
-    with safe_open(checkpoint_path, framework="pt", device=device) as f:
+    with safe_open(checkpoint_path, framework="pt") as f:
         for k in f.keys():
-            tensors[k] = f.get_tensor(k)
+            if load is not None: # Only load specified tensors
+                for load_key in load:
+                    if load_key in k:
+                        tensors[k] = f.get_tensor(k)
+            else: # load all tensors if load is None
+                tensors[k] = f.get_tensor(k)
     # Remove prefix "module." from keys.
     tensors = {k.removeprefix("module."): v for k, v in tensors.items()}
     incompatible_keys = model.load_state_dict(tensors, strict=False)
@@ -139,9 +157,10 @@ def load_model(checkpoint_path, config, device, data_parallel=True):
         raise ValueError(f"Unexpected keys in state_dict: {incompatible_keys.unexpected_keys}")
     if data_parallel:
         model = torch.nn.DataParallel(model)
+    model.to(device)
     return model, tokenizer
 
-def generate_predictions(model, tokenizer, dataset, device="cuda"):
+def generate_predictions(model, tokenizer, dataset, device="cuda", num_beams=1, temperature=None, top_p=None, do_sample=False):
     model.eval()
     predictions = []
     for title_batch in tqdm(dataset, desc="Generating labels..."):
@@ -153,6 +172,10 @@ def generate_predictions(model, tokenizer, dataset, device="cuda"):
                 gen_model = model
             generated_ids = gen_model.generate(
                 **title_batch,
+                temperature=temperature,
+                num_beams=num_beams,
+                top_p=top_p,
+                do_sample=do_sample,
                 )
         len_input = len(title_batch["input_ids"][0])
         generated_ids = generated_ids[0][len_input:] 

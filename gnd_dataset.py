@@ -20,7 +20,7 @@ class GNDDataset:
         "validate": "validate.tsv.gz",
         "test": "test.tsv.gz",
     }
-    def __init__(self, data_dir: str, gnd_graph: str, config: Dict[str, Any], load_from_disk: bool = False):
+    def __init__(self, data_dir: str, gnd_graph: str, config: Dict[str, Any] = None, load_from_disk: bool = False):
         """
         Initializes the GNDDataset.
 
@@ -31,6 +31,8 @@ class GNDDataset:
         """
         super().__init__()
         self.data_dir = data_dir
+        if config is None:
+            config = {}
         self.config = config
         self.sort_by_freq = bool(self.config.get("sort_by_freq", True)) # Sort labels by frequency
         self.use_k_freq_labels = int(self.config.get("use_k_freq_labels", 0)) # Only use k most frequent labels
@@ -90,15 +92,19 @@ class GNDDataset:
 
         for split, split_file in self.FILES.items():
             file_path = os.path.join(self.data_dir, split_file)
-            df = pd.read_csv(file_path, sep="\t", compression="gzip", header=0, names=["title", "label-ids"])
+            df = pd.read_csv(file_path, sep="\t", compression="gzip", names=["title", "label-ids"])
             # Subsample the dataset
             if split == "train":
                 # Subsample the training set
-                df = df.sample(frac=self.config.get("train_subsample_ratio", 1.0), random_state=42)
+                frac = self.config.get("train_subsample_ratio", 1.0)
+                if frac < 1.0:
+                    df = df.sample(frac=frac, random_state=42)
                 train_df = df
             elif split == "validate":
                 # Subsample the validation set
-                df = df.sample(frac=self.config.get("validate_subsample_ratio", 1.0), random_state=42)
+                frac = self.config.get("train_subsample_ratio", 1.0)
+                if frac < 1.0:
+                    df = df.sample(frac=frac, random_state=42)
                 validate_df = df
             elif split == "test":
                 test_df = df
@@ -133,80 +139,6 @@ class GNDDataset:
             "validate": validate_dataset,
             "test": test_dataset,
         }
-    
-    
-    def add_context(self, retriever, index, mapping, tokenizer, context_type="text" ,k=3, hops=1, relation=None, use_title_wise=False, batch_size=256, splits=None):
-        """
-        Adds context to the dataset using the provided retriever.
-
-        Args:
-            retriever: Retriever model which can retrieve additional labels.
-            mapping: Mapping of indices to their corresponding IDs.
-            index: Index of the retriever.
-            tokenizer: Tokenizer to use for tokenization.
-            context_type (str): Type of context to add (text or graph).
-            k (int): Number of labels to retrieve.  
-            hops (int): Number of hops to retrieve labels.
-            relation (str): Relation in graph which should be considered (broader or related).
-            use_title_wise (bool): Whether to use title-wise retrieval.
-            batch_size (int): Batch size for retrieval.
-            splits (List[str], optional): List of dataset splits to add context to. If None, all splits are processed.
-        
-        Returns: None
-        """
-        for split, dataset in self.dataset.items():
-            if splits is not None and split not in splits:
-                continue
-            remove_diagonal = False 
-            # If we use the train set and title-wise retrieval, we need to remove the diagonal
-            if split == "train" and use_title_wise:
-                remove_diagonal = True
-            st = time.time()
-            print(f"Adding context to {split} dataset...")
-            context_idns = retriever.retrieve_with_neighbors(
-                graph=self.gnd_graph,
-                mapping=mapping,
-                index=index,
-                texts=dataset["title"],
-                k=hops,
-                top_k=k,
-                batch_size=batch_size,
-                relation=relation,
-                title_wise=use_title_wise,
-                remove_diagonal=remove_diagonal
-            )
-            # Map to label names
-            context_str = [
-                [self.gnd_graph.pref_label_name(idn) for idn in idns if idn in self.gnd_graph.nodes]
-                for idns in context_idns
-            ]
-            context_ids = []
-            context_lengths = []
-            for str_list in tqdm(context_str):
-                ids, c_length = self.tokenize_context(tokenizer=tokenizer, context_string_list=str_list)
-                context_ids.append(ids)
-                context_lengths.append(c_length)
-            dataset = dataset.add_column("context_str", context_str)
-            dataset = dataset.add_column("context_ids", context_ids)
-            dataset = dataset.add_column("context_lengths", context_lengths)
-
-            # Add subgraph:
-            context_graph = [
-                [nx.node_link_data(
-                    self.gnd_graph.subgraph(idns), edges="edges")
-                    ]
-                for idns in context_idns
-            ]
-            dataset = dataset.add_column("context_graph", context_graph)
-            
-            et = time.time()
-            duration = et - st
-            # Convert to minutes and seconds
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-            print(f"Context added to {split} dataset in {minutes} min {seconds} sec.")
-
-            self.dataset[split] = dataset
     
     def save_to_disk(self, path):
         """

@@ -6,7 +6,7 @@ from statistics import mean
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from transformers import get_linear_schedule_with_warmup, logging
+from transformers import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup, logging
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 import wandb
@@ -15,6 +15,7 @@ from utils import generate_predictions, SEP_TOKEN
 
 
 KEYS = ["label-string", "label-names", "title", "context_str"]
+
 logger = getLogger(__name__)
 
 logging.set_verbosity_error()
@@ -34,7 +35,7 @@ class Trainer:
     def save_checkpoint(self, model, scheduler, optimizer, output_dir):
         model_to_save = OrderedDict()
         for n, p in model.named_parameters():
-            if p.requires_grad:
+            if p.requires_grad or "prompt_generator" in n:
                 model_to_save[n] = p
         if isinstance(model, torch.nn.DataParallel):
             model_to_save = {k.replace("module.", ""): v for k, v in model_to_save.items()}
@@ -97,12 +98,13 @@ class Trainer:
         # Subsample for generation evaluation
         gen_eval_ds = eval_dataset.select(range(200)).select_columns([key for key in KEYS if key in eval_dataset.column_names])
         # Create DataLoader
-        gen_eval_dataloader = DataLoader(
-            gen_eval_ds, 
-            batch_size=1, 
-            shuffle=False, 
-            collate_fn=lambda x: self.data_collator(x, inference=True)
-        )
+        if self.config["eval_generation"] is True:
+            gen_eval_dataloader = DataLoader(
+                gen_eval_ds, 
+                batch_size=1, 
+                shuffle=False, 
+                collate_fn=lambda x: self.data_collator(x, inference=True)
+            )
         train_dataloader = DataLoader(
             train_dataset, 
             batch_size=self.config["batch_size"], 
@@ -120,15 +122,22 @@ class Trainer:
         save_steps = self.config["save_steps"]
         max_norm = self.config["max_grad_norm"]
         lr = float(self.config["learning_rate"])
+        lr_decay = self.config["learning_rate_decay"]
         total_steps = len(train_dataloader) * num_epochs
 
         # Create optimizer and scheduler
         optimizer = AdamW(model.parameters(), lr=lr)
-        scheduler = get_linear_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=int(self.config["warmup_rate"]* total_steps),
-            num_training_steps=total_steps,
-        )
+        if lr_decay:
+            scheduler = get_linear_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=int(self.config["warmup_rate"]* total_steps),
+                num_training_steps=total_steps,
+            )
+        else:
+            scheduler = get_constant_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=int(self.config["warmup_rate"] * total_steps),
+            )
 
         global_step = 0
         track_loss = []
