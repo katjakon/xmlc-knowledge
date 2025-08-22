@@ -86,7 +86,7 @@ gnd_ds = GNDDataset(
     config=config,
     load_from_disk=True,
 )
-train_ds = gnd_ds["train"] #.select(range(1000))  
+train_ds = gnd_ds["train"].select(range(1000))  
 
 # Generate mapping and index to retriever few short examples.
 s_transf = SentenceTransformer(
@@ -119,22 +119,13 @@ pipe = pipeline(
         device=DEVICE,
     )
 
-
-test_ds = pd.read_csv(
-    os.path.join("title-qm", "sci-ger-ideal.tsv.gz"), 
-    sep="\t", 
-    compression="gzip",
-    names=["title", "label_ids"])
-test_ds = Dataset.from_pandas(test_ds) #.select(range(10))
-
 raw_predictions = []
-
 for row in tqdm(test_ds, total=test_ds.num_rows):
     title = row["title"]
     title_emb = s_transf.encode([title])
     fs_distance, fs_indices = index.search(title_emb, 3)
     fs_ex = few_shot_string(train_ds, fs_indices)	
-    system_prompt = f"{SYSTEM_PROMPT} {'\n'.join(fs_ex)}"
+    system_prompt = f"{SYSTEM_PROMPT} " + '\n'.join(fs_ex)
     messages = [
     {"role": "system", "content": system_prompt},
     {"role": "user", "content": USER_PROMPT.format(row["title"])},
@@ -142,6 +133,7 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
     outputs = pipe(messages, num_return_sequences=1, do_sample=True, temperature=0.7)
     new_tokens = outputs[0]["generated_text"][-1]["content"]
     raw_predictions.append(new_tokens.strip())
+    print(raw_predictions)
 
 
 # Process the raw predictions to match the expected format

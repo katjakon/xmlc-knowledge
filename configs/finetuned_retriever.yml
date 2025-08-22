@@ -1,5 +1,5 @@
 
-sentence_transformer_model: "retriever/partial/checkpoint-17218"
+sentence_transformer_model: "KatjaK/gnd_retriever_full"
 experiment_name: finetuned-retriever-partial
 checkpoint_path: models
 graph_path: data/gnd.pickle
