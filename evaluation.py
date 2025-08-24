@@ -68,6 +68,7 @@ weighted_prec = []
 # Convert to list
 test_df["predictions"] = test_df["predictions"].apply(literal_eval)
 test_df["label-ids"] = test_df["label-ids"].apply(literal_eval)
+
 label_names = []
 for ids in test_df["label-ids"]:
     instance_names = []
@@ -93,7 +94,7 @@ all_metrics_dict["weighted_precision"] = mean(weighted_prec)
 
 print("Metrics without reranking:")
 print(f'Recall: {all_metrics_dict["recall"] }\nPrecision: {all_metrics_dict["precision"]}\nF1: {all_metrics_dict["f1"]}')
-print(f"Jaccard Similarity: {all_metrics_dict["jaccard"]}")
+print(f"Jaccard Similarity: {all_metrics_dict['jaccard']}")
 print(f"Weighted Precision: {all_metrics_dict['weighted_precision']}")
 
 if "reranked-predictions" not in test_df.columns:
