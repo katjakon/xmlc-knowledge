@@ -144,7 +144,7 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
         title_emb = s_transf.encode([title])
         fs_distance, fs_indices = index.search(title_emb, n_examples)
     elif example_type == "random":
-        fs_indices = random.sample(range(train_ds.num_rows), k=n_examples)
+        fs_indices = [random.sample(range(train_ds.num_rows), k=n_examples)]
     else:
         raise ValueError(f"{example_type} is not implemented.")
     fs_ex = few_shot_string(train_ds, fs_indices)
@@ -173,6 +173,7 @@ pred_df = pd.DataFrame(
         "raw_predictions": raw_predictions,
         "doc_idn": test_ds["doc_idn"],
         "title": test_ds["title"],
+        "label-ids": test_ds["label-ids"]
     }
 )
 
