@@ -183,24 +183,6 @@ pred_df = reranker.rerank(
     gnd_graph,
     bs=200
 )
-
-# # Reshape predictions necessary for QM.
-# index_file = os.path.join("title-qm", "sci-ger-ideal.arrow")
-# index_qm = pd.read_feather(index_file)
-
-
-# doc_ids = {i: index_qm[index_qm["location"] == i]["idn"].values[0] for i in tqdm(range(pred_df.shape[0]), desc="Map indices to doc idn")}
-
-# suggestions = []
-
-# for i, row in tqdm(pred_df.iterrows(), total=pred_df.shape[0], desc="Reshaping predictions..."):
-#     doc_id = doc_ids[i]
-#     reranked_predictions = row["reranked-predictions"]
-#     scores = row["scores"]
-#     for rank, (label_id, score) in enumerate(zip(reranked_predictions, scores)):
-#         suggestions.append({"doc_id": doc_id, "label_id": label_id, "score": score, "rank": rank + 1})
-# suggestions_df = pd.DataFrame(suggestions)  # Convert to dataframe
-
 chp_str = f"few-shot"
 pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-{chp_str}-seed-{arguments.seed}.csv"))
-# suggestions_df.to_feather(os.path.join(result_dir, f"suggestions.arrow"))
+
