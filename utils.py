@@ -97,8 +97,6 @@ def weighted_precision(y_true, y_pred, graph):
     return weighted_prec
 
 def process_output(text):
-    # pattern = r"\d+[.)]"
-    # text = re.sub(pattern, "", text)
     sep_tokens = r"[,;-]"
     text = re.split(sep_tokens, text)
     text = [x.strip() for x in text]

@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from data_collator import DataCollator
 from gnd_dataset import GNDDataset
+from gnd_graph import GNDGraph
 from retriever import Retriever
 from reranker import BGEReranker
 from utils import load_model, generate_predictions, map_labels, process_output, SEP_TOKEN
@@ -56,6 +57,7 @@ if not os.path.exists(result_dir):
 # Load GND graph
 gnd_path  = config["graph_path"]
 gnd_graph = pickle.load(open(gnd_path, "rb"))
+gnd_graph = GNDGraph(gnd_graph)
 
 data_dir = config["dataset_path"]
 # Load GND dataset
@@ -65,7 +67,7 @@ gnd_ds = GNDDataset(
     config=config,
     load_from_disk=True,
 )
-test_ds = gnd_ds[split] # .select(range(10))
+test_ds = gnd_ds[split]
 
 retriever_model = config["sentence_transformer_model"]
 retriever = Retriever(
