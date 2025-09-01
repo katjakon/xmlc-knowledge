@@ -1,5 +1,0 @@
-outs:
-- md5: 088463491cbe6c582a6eb689c380cf7f
-  size: 5803636
-  hash: md5
-  path: label_mapping.pkl
