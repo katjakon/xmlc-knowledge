@@ -60,8 +60,8 @@ class Trainer:
         accs = []
         for i, record in tqdm(enumerate(eval_dataset), desc="Evaluating generation...", leave=False):
                 pred_str = predictions[i]
-                labels = record["label-string"]
                 label_list = record["label-names"]
+                labels = SEP_TOKEN.join(label_list)
                 # Process generated text
                 gen_embedding = self.similarity_model.encode(pred_str, convert_to_tensor=True)
                 label_embedding = self.similarity_model.encode(labels, convert_to_tensor=True)

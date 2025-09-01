@@ -19,11 +19,13 @@ parser = argparse.ArgumentParser(description="Train a model on the GND dataset."
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--dev", action="store_true", help="Run in development mode with a smaller dataset.")
 parser.add_argument("--load_from_pretrained", help="Path to a pretrained model to load from.", type=str, default=False)
+parser.add_argument("--num_validate", default=2000)
 
 arguments = parser.parse_args()
 config_path = arguments.config
 dev = arguments.dev
 load_from_pretrained = arguments.load_from_pretrained
+num_validate = arguments.num_validate
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
@@ -59,7 +61,7 @@ else:
     model, tokenizer = init_prompt_model(
         model_name=model_name,
         prompt_config=config["prompt_config"],
-        tune_lm_head=False,
+        tune_lm_head=True,
     )
     model = torch.nn.DataParallel(model)
 
@@ -73,10 +75,13 @@ gnd_ds = GNDDataset(
 )
 
 # Split the dataset into train, validation, and test sets
-# train_size = range(100_000, len(gnd_ds["train"]))
-train_ds = gnd_ds["train"] # .select(train_size)  # Use a subset for development
+train_ds = gnd_ds["train"]
 valid_ds = gnd_ds["validate"]
+if num_validate < valid_ds.num_rows:
+    valid_ds = valid_ds.select(range(num_validate))
 test_ds = gnd_ds["test"]
+
+print("Number of validate examples: ", valid_ds.num_rows)
 
 retriever_model = config["sentence_transformer_model"]
 retriever = Retriever(
@@ -102,12 +107,13 @@ else:
     retriever.fit(batch_size=1000)
 
 data_collator = DataCollator(
-    tokenizer=tokenizer,
-    graph=gnd_graph,
-    config=config,
-    device=DEVICE,
-    retriever=retriever,
-)
+        tokenizer=tokenizer,
+        graph=gnd_graph,  
+        device=DEVICE,
+        use_context=config["context"]["context_type"] is not None,
+        top_k=config["context"]["top_k"],
+        hard_prompt=False
+    )
 
 if dev:
     # For development, use a smaller subset of the dataset
