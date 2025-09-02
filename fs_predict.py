@@ -50,6 +50,7 @@ parser.add_argument(
     help="How to choose few shot examples.", 
     default="title", 
     choices=("title", "label", "random"))
+parser.add_argument("--dev", action='store_true', default=False)
 
 arguments = parser.parse_args()
 config_path = arguments.config
@@ -59,6 +60,7 @@ index_path = arguments.index
 mapping_path = arguments.mapping
 example_type = arguments.example_type
 n_examples = arguments.n_examples
+dev = arguments.dev
 
 set_seed(arguments.seed)
 
@@ -99,8 +101,12 @@ gnd_ds = GNDDataset(
     config=config,
     load_from_disk=True,
 )
-train_ds = gnd_ds["train"] #.select(range(100))
-test_ds = gnd_ds["test"] #.select(range(10))
+train_ds = gnd_ds["train"]
+test_ds = gnd_ds["test"]
+
+if dev:
+    train_ds = train_ds.select(range(100))
+    test_ds = test_ds.select(range(10))
 
 print("Loading embedding model.")
 # Generate mapping and index to retriever few short examples.
@@ -158,12 +164,12 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
     raw_predictions.append(new_tokens.strip())
 
 # Process the raw predictions to match the expected format
-raw_predictions = [process_output(pred) for pred in raw_predictions]
+processed_predictions = [process_output(pred) for pred in raw_predictions]
 
 print("Mapping predictions to label space.")
 # Map the labels to GND IDs
 pred_idns = map_labels(
-    raw_predictions, 
+    processed_predictions, 
     retriever=retriever,
 )
 
@@ -176,7 +182,6 @@ pred_df = pd.DataFrame(
         "label-ids": test_ds["label-ids"]
     }
 )
-
 reranker = BGEReranker("BAAI/bge-reranker-v2-m3", device=DEVICE)
 pred_df = reranker.rerank(
     pred_df,

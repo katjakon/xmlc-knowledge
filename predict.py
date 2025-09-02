@@ -29,6 +29,7 @@ parser.add_argument("--mapping", type=str, help="Path to the mapping file.")
 parser.add_argument("--split", type=str, help="Split to use for evaluation.", default="test")
 parser.add_argument("--checkpoint", type=str, help="Checkpoint to use for evaluation.", default="best_model")
 parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
+parser.add_argument("--dev", action='store_true', default=False)
 
 arguments = parser.parse_args()
 config_path = arguments.config
@@ -38,6 +39,7 @@ index_path = arguments.index
 mapping_path = arguments.mapping
 split = arguments.split
 checkpoint = arguments.checkpoint
+dev = arguments.dev
 
 # Set random seed for reproducibility
 set_seed(arguments.seed)
@@ -69,6 +71,9 @@ gnd_ds = GNDDataset(
 )
 test_ds = gnd_ds[split]
 
+if dev:
+    test_ds = test_ds.select(range(10))
+
 retriever_model = config["sentence_transformer_model"]
 retriever = Retriever(
     retriever_model=retriever_model,
@@ -94,9 +99,13 @@ if do_hard_prompt:
         title = row["title"]
 
         if config["context"]["context_type"] is not None:
-            keywords = row["context_str"]
-            keywords = [kw.strip() for kw in keywords if kw.strip()]
-            keywords_str = SEP_TOKEN.join(keywords)
+            distance, label_idn = retriever.retrieve(
+                texts=[title],
+                top_k=config["context"]["top_k"]
+            )
+            keywords = [gnd_graph.pref_label_name(idn) for idn in label_idn[0]]
+            keywords = [k for k in keywords if k]
+            keywords_str = f"{SEP_TOKEN} ".join(keywords)
             system_prompt = SYSTEM_PROMPT + CONTEXT_PROMPT.format(keywords_str)
         else:
             system_prompt = SYSTEM_PROMPT

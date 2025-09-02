@@ -14,7 +14,6 @@ class Retriever:
     
     def retrieve(self, texts, top_k=10, batch_size=256):
         """
-        mapping: dict
         texts: list of strings
         top_k: int
         batch_size: int
