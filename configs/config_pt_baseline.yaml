@@ -1,9 +1,9 @@
 model_name: meta-llama/Llama-3.2-3B
 sentence_transformer_model: BAAI/bge-m3
-experiment_name: prompt-tuning-baseline-full
+experiment_name: prompt-tuning-baseline-3B
 checkpoint_path: pt_models
-graph_path: data/gnd.pickle
-dataset_path: datasets/no_context
+graph_path: gnd/gnd.pickle
+dataset_path: dataset
 num_epochs: 2
 batch_size: 32
 learning_rate: 5e-5
@@ -17,6 +17,7 @@ train_subsample_ratio: 1.0
 validate_subsample_ratio: 0.03
 sort_by_freq: true
 use_k_freq_labels: 0
+learning_rate_decay: True
 
 context:
   context_type: null # Choices: "text" or "graph". Use null if no context is needed.
@@ -24,8 +25,8 @@ context:
   hops: 0 # Also include hops in the knowledge graph from retrieved instances
   title_wise: false # Whether to retrieve title-to-label or title-to-title
   relation: null # Choices: null (use all relations) "broader" or "related"
-  index_path: "data/label_index.pkl"
-  mapping_path: "data/label_mapping.pkl"
+  index_path: "search_indices/label_index.pkl"
+  mapping_path: "search_indices/label_mapping.pkl"
 
 prompt_config:
   num_prompt_tokens: 50
