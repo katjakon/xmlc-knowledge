@@ -29,9 +29,9 @@ context:
   mapping_path: "search_indices/label_mapping.pkl"
 
 prompt_config:
-  num_prompt_tokens: 50
-  at_layer: 28
+  num_prompt_tokens: 100
+  at_layer: 30
   hidden_size: 4096
-  down_project_size: 1024
+  down_project_size: 3072
   dropout: 0.1
   type: "hidden_states" # Choices: "hidden_states", "random" or "context"
