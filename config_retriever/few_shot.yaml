@@ -1,0 +1,10 @@
+sentence_transformer_model: "BAAI/bge-m3"
+experiment_name: few-shot-retriever
+checkpoint_path: retriever
+graph_path: gnd/gnd.pickle
+dataset_path: dataset
+num_examples: 2
+num_epochs: 2
+batch_size: 64
+learning_rate: 1e-5
+
