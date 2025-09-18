@@ -1,6 +1,6 @@
 model_name: meta-llama/Llama-3.2-3B-Instruct
 sentence_transformer_model: KatjaK/GND-few-shot-retriever
-experiment_name: few-shot-baseline
+experiment_name: few-shot-finetuned
 checkpoint_path: models
 graph_path: gnd/gnd.pickle
 dataset_path: dataset
