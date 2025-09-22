@@ -128,12 +128,20 @@ else:
     checkpoint_path = os.path.join(output_dir, checkpoint, "model.safetensors")
 
     model, tokenizer = load_model(checkpoint_path, config=config, device=DEVICE, data_parallel=True)
+    retriever_model = config["sentence_transformer_model"]
+    context_retriever = Retriever(
+        retriever_model=retriever_model,
+        graph=gnd_graph,
+        device=DEVICE,
+    )
+    context_retriever.fit(batch_size=1000)
     data_collator = DataCollator(
         tokenizer=tokenizer,
         graph=gnd_graph,  
         device=DEVICE,
         use_context=config["context"]["context_type"] is not None,
         top_k=config["context"]["top_k"],
+        retriever=context_retriever
     )
     loader = torch.utils.data.DataLoader(
         test_ds,
@@ -171,6 +179,7 @@ pred_df = pd.DataFrame(
         "label-ids": test_ds["label-ids"],
         "label-names": test_ds["label-names"],
         "title": test_ds["title"],
+        "doc_idn": test_ds["doc_idn"],
     }
 )
 
