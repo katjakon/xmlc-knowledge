@@ -1,12 +1,16 @@
 from ast import literal_eval
 import pickle
+from statistics import mean
 
+from evaluate import load
 import pandas as pd
+from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
+from reranker import BGEReranker
 from gnd_graph import GNDGraph
 from gnd_dataset import GNDDataset
-from utils import inverse_distance_weight
+from utils import inverse_distance_weight, SEP_TOKEN
 
 def add_entity_info(df, graph):
     df["entity"] = df["label-id"].apply(
@@ -166,6 +170,114 @@ gold_df = add_hsg_info(gold_df, docid2hsg)
 by_genres = eval_by(long_df, gold_df, by="hsg", include_counts=False)
 full_eval_metrics["genres"] = by_genres.to_dict("index")
 print(by_genres)
+
+# MT Metrics
+bertscore = load("bertscore")
+meteor = load('meteor')
+rouge = load('rouge')
+
+# gold_names = [gnd_graph.pref_label_name(label_id) for label_id in test_df["label-ids"]]
+test_df["label-names"] = test_df["label-ids"].apply(
+    lambda x: [gnd_graph.pref_label_name(idn) for idn in x]
+)
+gold_labels = test_df["label-names"].apply(lambda x: f"{SEP_TOKEN} ".join(x))
+
+if "raw_predictions" in test_df.columns:
+    raw_preds = test_df["raw_predictions"]
+
+    bert_results = bertscore.compute(
+        predictions=raw_preds, 
+        references=gold_labels, 
+        model_type="bert-base-multilingual-cased", 
+        lang="de"
+    )
+    bert_results = {
+        "precision": mean(bert_results["precision"]),
+        "recall": mean(bert_results["recall"]),
+        "f1": mean(bert_results["f1"])
+    }
+    print(f"BERTScore: {bert_results}")
+    full_eval_metrics["bertscore"] = bert_results
+
+    meteor_results = meteor.compute(
+        predictions=raw_preds, 
+        references=gold_labels
+    )
+    print(f"Meteor: {meteor_results}")
+    full_eval_metrics["meteor"] = float(meteor_results['meteor'])
+
+    rouge_results = rouge.compute(
+        predictions=raw_preds, 
+        references=gold_labels
+    )
+    print(f"Rouge: {rouge_results}")
+    full_eval_metrics["rouge"] = {k: float(v) for k, v in rouge_results.items()}
+
+# Group Labels by their similarity to the title.
+sent_model = SentenceTransformer("BAAI/bge-m3")
+tokenizer = sent_model.tokenizer
+
+idnl2index = {}
+index2idn = {}
+i = 0
+for idns in tqdm(test_df["label-ids"]):
+    for idn in idns:
+        if idn not in idnl2index:
+            idnl2index[idn] = i
+            index2idn[i] = idn
+            i += 1
+
+emb_title =  sent_model.encode(test_df["title"], batch_size=256, show_progress_bar=True)
+gold_strings = [gnd_graph.pref_label_name(idn) for idn in idnl2index.keys()]
+emb_gold = sent_model.encode(gold_strings, batch_size=256, show_progress_bar=True)
+
+similarity_dict = {}
+
+for i, row in tqdm(test_df.iterrows(), total=len(test_df)):
+    gold_labels = row["label-ids"]
+    for g in gold_labels:
+        g_i = idnl2index[g]
+        sim = sent_model.similarity(emb_title[i], emb_gold[g_i])
+        correct = g in row["predictions"]
+        similarity_dict[(row["title"], g)] = {
+            "similarity": sim,
+            "correct": correct,
+        }
+
+grouped_sim = {
+    "not-similar": [],
+    "somewhat-similar": [],
+    "similar": [],
+    "very-similar": [],
+}
+
+for (title, label_name), value in similarity_dict.items():
+    sim = value["similarity"]
+    correct = value["correct"]
+    if sim < 0.25:
+        grouped_sim["not-similar"].append(correct)
+    elif sim < 0.5:
+        grouped_sim["somewhat-similar"].append(correct)
+    elif sim < 0.75:
+        grouped_sim["similar"].append(correct)
+    else:
+        grouped_sim["very-similar"].append(correct)
+
+for group, values in grouped_sim.items():
+    grouped_sim[group] = mean(values) if values else 0.0
+
+print("Performance grouped by similarity to title:")
+for group, value in grouped_sim.items():
+    print(f"{group}: {value}")
+full_eval_metrics["similarity_to_title"] = grouped_sim
+
 print(full_eval_metrics)
+# # Save all metrics to a YAML file
+# file_name = os.path.basename(pred_file).split(".")[0]
+# eval_path = os.path.join(os.path.dirname(pred_file), f"{file_name}_eval.yaml")
+# with open(eval_path, "w") as f:
+#     yaml.dump(full_eval_metrics, f, indent=2, sort_keys=False, allow_unicode=True)
+
+
 
 
