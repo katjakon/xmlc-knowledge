@@ -80,8 +80,6 @@ def inverse_distance_weight(graph, gold_node, predicted_node):
 
         # Weight inversely proportional to distance
     weight = 1 / (1 + distance) if distance != float('inf') else 0
-
-    # Normalize by the number of predictions
     return weight
 
 def weighted_precision(y_true, y_pred, graph):
