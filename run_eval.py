@@ -1,50 +1,21 @@
 from ast import literal_eval
 import os
 import pickle
-from statistics import mean
 
-from evaluate import load
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 import yaml
 
-from evaluate_results.similarity import get_similarity_data
+from evaluate_results.similarity import get_similarity_data, bin_similarity
+from evaluate_results.entity_types import add_entity_info
+from evaluate_results.mt_metrics import gold_label_strings, bertscore_results, meteor_results, rouge_results
+from evaluate_results.label_frequency import add_label_freq_info
+from evaluate_results.genres import add_hsg_info, hsg_data
 from reranker import BGEReranker
 from gnd_graph import GNDGraph
 from gnd_dataset import GNDDataset
 from utils import inverse_distance_weight, SEP_TOKEN
-
-def add_entity_info(df, graph):
-    df["entity"] = df["label-id"].apply(
-    lambda x: graph.node_type(x) 
-    )
-    return df
-
-def add_label_freq_info(df, freq_dict):
-    df["label-freq"] = df["label-id"].apply(
-        lambda x: freq_dict.get(x, 0)
-        )
-
-    df["label-freq"] = pd.cut(
-        df["label-freq"], 
-        bins=[-1, 0, 1, 10, 100, 1000, 100_000_000],
-        labels=["x=0", "x=1", "1<x<=10", "10<x<=100", "100<x<=1000", "x>1000"]
-        )
-    return df
-
-def add_hsg_info(df, mapping):
-    df["hsg"] = df["doc_idn"].apply(lambda x: mapping.get(x))
-    return df
-
-def bin_similarity(df):
-    df["similarity"] = pd.cut(
-    df["similarity"], 
-    bins=[0, 0.25, 0.5, 0.75, 1],
-    labels=["not similar", "somewhat similar", "similar", "very similar"]
-    )
-    return df
-
 
 def best_distance_weight(pred_label, gold_labels, graph):
     max_weight = - float('inf')
@@ -97,7 +68,7 @@ long_dict = {
     "score": [],
     "rank": [],
     "correct": [],
-    "inv-distance": [],
+    "inverse-distance": [],
     "similarity": []
 }
 gold_dict = {
@@ -128,7 +99,7 @@ for index, record in tqdm(test_df.iterrows(), total=test_df.shape[0]):
 
         # Compute the score for the shortest distance of prediction and gold label
         distance_score = best_distance_weight(pred, record["label-ids"], gnd_graph)
-        long_dict["inv-distance"].append(distance_score)
+        long_dict["inverse-distance"].append(distance_score)
 
         # How similar is the predicted label to the title?
         label_idx = sim_data["idn2idx"].get(pred)
@@ -154,15 +125,15 @@ long_df = pd.DataFrame.from_dict(long_dict)
 gold_df = pd.DataFrame.from_dict(gold_dict)
 
 print("Inverse Distance Metric")
-distance_metric = long_df.groupby("doc_idn")["inv-distance"].mean()
+distance_metric = long_df.groupby("doc_idn")["inverse-distance"].mean()
 print(distance_metric.mean())
 full_eval_metrics["weighted_precision"] = float(distance_metric.mean())
 
 ## PERFORMANCE FOR ALL PREDICTIONS
-result = eval_by(long_df, gold_df, by="doc_idn").mean()
-full_eval_metrics.update(result.to_dict())
+result_no_limit = eval_by(long_df, gold_df, by="doc_idn").mean()
+full_eval_metrics.update(result_no_limit.to_dict())
 print("Performance for all predictions: ")
-print(result)
+print(result_no_limit)
 
 # PERFORMANCE AT K
 for at_k in [1, 3, 5]:
@@ -211,64 +182,37 @@ print(by_sim)
 ## GENRES
 print("Perfomance by document genres: ")
 path = "gnd/hsg-mapping-small.csv"
-df = pd.read_csv(path)
-df["hsg"] = df["hsg"].str[:1]
+docid2hsg, hsg2label = hsg_data(path, shorten_codes=True)
 
-docid2hsg = {
-    doc_id: hsg_code for doc_id, hsg_code in zip(df["doc_id"], df["hsg"])
-}
-
-long_df = add_hsg_info(long_df, docid2hsg)
-gold_df = add_hsg_info(gold_df, docid2hsg)
+long_df = add_hsg_info(long_df,  docid2hsg=docid2hsg, hsg2label=hsg2label)
+gold_df = add_hsg_info(gold_df, docid2hsg=docid2hsg, hsg2label=hsg2label)
 
 by_genres = eval_by(long_df, gold_df, by="hsg", include_counts=False)
 full_eval_metrics["genres"] = by_genres.to_dict("index")
 print(by_genres)
 
 # MT Metrics
-bertscore = load("bertscore")
-meteor = load('meteor')
-rouge = load('rouge')
-
-test_df["label-names"] = test_df["label-ids"].apply(
-    lambda x: [gnd_graph.pref_label_name(idn) for idn in x if idn in gnd_graph]
-)
-gold_labels = test_df["label-names"].apply(lambda x: f"{SEP_TOKEN} ".join(x))
+gold_labels = gold_label_strings(test_df, gnd_graph)
 
 if "raw_predictions" in test_df.columns:
     raw_preds = test_df["raw_predictions"]
 
-    bert_results = bertscore.compute(
-        predictions=raw_preds, 
-        references=gold_labels, 
-        model_type="bert-base-multilingual-cased", 
-        lang="de"
-    )
-    bert_results = {
-        "precision": mean(bert_results["precision"]),
-        "recall": mean(bert_results["recall"]),
-        "f1": mean(bert_results["f1"])
-    }
+    bert_results = bertscore_results(pred_strings=raw_preds, gold_strings=gold_labels)
     print(f"BERTScore: {bert_results}")
     full_eval_metrics["bertscore"] = bert_results
 
-    meteor_results = meteor.compute(
-        predictions=raw_preds, 
-        references=gold_labels
-    )
-    print(f"Meteor: {meteor_results}")
-    full_eval_metrics["meteor"] = float(meteor_results['meteor'])
+    meteor = meteor_results(pred_strings=raw_preds, gold_strings=gold_labels)
+    print(f"Meteor: {meteor}")
+    full_eval_metrics["meteor"] = meteor
 
-    rouge_results = rouge.compute(
-        predictions=raw_preds, 
-        references=gold_labels
-    )
-    print(f"Rouge: {rouge_results}")
-    full_eval_metrics["rouge"] = {k: float(v) for k, v in rouge_results.items()}
+    rouge = rouge_results(pred_strings=raw_preds, gold_strings=gold_labels)
+    print(f"Rouge: {rouge}")
+    full_eval_metrics["rouge"] = rouge
 
 # Save all metrics to a YAML file
 file_name = "dev" #os.path.basename(pred_file).split(".")[0]
 eval_path = os.path.join(os.path.dirname(file), f"{file_name}_eval.yaml")
+
 with open(eval_path, "w") as f:
     yaml.dump(full_eval_metrics, f, indent=2, sort_keys=False, allow_unicode=True)
 
