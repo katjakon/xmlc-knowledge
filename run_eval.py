@@ -1,4 +1,5 @@
 from ast import literal_eval
+import os
 import pickle
 from statistics import mean
 
@@ -6,7 +7,9 @@ from evaluate import load
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+import yaml
 
+from evaluate_results.similarity import get_similarity_data
 from reranker import BGEReranker
 from gnd_graph import GNDGraph
 from gnd_dataset import GNDDataset
@@ -34,7 +37,16 @@ def add_hsg_info(df, mapping):
     df["hsg"] = df["doc_idn"].apply(lambda x: mapping.get(x))
     return df
 
-def minimum_distance(pred_label, gold_labels, graph):
+def bin_similarity(df):
+    df["similarity"] = pd.cut(
+    df["similarity"], 
+    bins=[0, 0.25, 0.5, 0.75, 1],
+    labels=["not similar", "somewhat similar", "similar", "very similar"]
+    )
+    return df
+
+
+def best_distance_weight(pred_label, gold_labels, graph):
     max_weight = - float('inf')
     for g in gold_labels:
         weight = inverse_distance_weight(graph, g, pred_label)
@@ -63,21 +75,21 @@ def eval_by(pred_df, gold_df, by, include_counts=True):
 
 file = "results/few-shot-baseline-8b/predictions-test-few-shot-seed-42.csv"
 
-test_df = pd.read_csv(file).head(20)
+test_df = pd.read_csv(file) #.head(20)
 
 test_df["predictions"] = test_df["predictions"].apply(literal_eval)
 test_df["label-ids"] = test_df["label-ids"].apply(literal_eval)
 test_df["reranked-predictions"] = test_df["reranked-predictions"].apply(literal_eval)
 test_df["scores"] = test_df["scores"].apply(literal_eval)
 
-full_eval_metrics = {
-
-}
+full_eval_metrics = {}
 
 # Load gnd graph:
 gnd_path = "gnd/gnd.pickle"
 gnd_graph = pickle.load(open(gnd_path, "rb"))
 gnd_graph = GNDGraph(gnd_graph)
+
+sentence_model = SentenceTransformer("BAAI/bge-m3")
 
 long_dict = {
     "doc_idn": [],
@@ -85,17 +97,27 @@ long_dict = {
     "score": [],
     "rank": [],
     "correct": [],
-    "inv-distance": []
+    "inv-distance": [],
+    "similarity": []
 }
 gold_dict = {
     "doc_idn": [],
-    "label-id": []
+    "label-id": [],
+    "similarity": []
 }
+
+sim_data = get_similarity_data(
+    sentence_model=sentence_model,
+    data=test_df, 
+    gnd_graph=gnd_graph, 
+    batch_size=512
+)
 
 for index, record in tqdm(test_df.iterrows(), total=test_df.shape[0]):
     gold_set = set(record["label-ids"])
     pred_set = set(record["reranked-predictions"])
 
+    title_embedding = sim_data["title_embeddings"][index]
     for pred_idx, (pred, score) in enumerate(zip(record["reranked-predictions"], record["scores"])):
         rank = pred_idx + 1
         long_dict["doc_idn"].append(record["doc_idn"])
@@ -103,11 +125,29 @@ for index, record in tqdm(test_df.iterrows(), total=test_df.shape[0]):
         long_dict["score"].append(score)
         long_dict["rank"].append(rank)
         long_dict["correct"].append(pred in gold_set)
-        long_dict["inv-distance"].append(minimum_distance(pred, record["label-ids"], gnd_graph))
-    
+
+        # Compute the score for the shortest distance of prediction and gold label
+        distance_score = best_distance_weight(pred, record["label-ids"], gnd_graph)
+        long_dict["inv-distance"].append(distance_score)
+
+        # How similar is the predicted label to the title?
+        label_idx = sim_data["idn2idx"].get(pred)
+        sim = 0
+        if label_idx is not None:
+            pred_label_embedding = sim_data["label_embeddings"][label_idx]
+            sim = sentence_model.similarity(title_embedding, pred_label_embedding).item()
+        long_dict["similarity"].append(sim)
+
     for gold in record["label-ids"]:
         gold_dict["doc_idn"].append(record["doc_idn"])
         gold_dict["label-id"].append(gold)
+        # How similar is the gold label to the title?
+        label_idx = sim_data["idn2idx"].get(gold)
+        sim = 0
+        if label_idx is not None:
+            gold_label_embedding = sim_data["label_embeddings"][label_idx]
+            sim = sentence_model.similarity(title_embedding, gold_label_embedding).item()
+        gold_dict["similarity"].append(sim)
 
 
 long_df = pd.DataFrame.from_dict(long_dict)
@@ -118,7 +158,13 @@ distance_metric = long_df.groupby("doc_idn")["inv-distance"].mean()
 print(distance_metric.mean())
 full_eval_metrics["weighted_precision"] = float(distance_metric.mean())
 
-# AT K.
+## PERFORMANCE FOR ALL PREDICTIONS
+result = eval_by(long_df, gold_df, by="doc_idn").mean()
+full_eval_metrics.update(result.to_dict())
+print("Performance for all predictions: ")
+print(result)
+
+# PERFORMANCE AT K
 for at_k in [1, 3, 5]:
     rank_df = long_df[long_df["rank"] <= at_k]
     print(f"Performance@{at_k}")
@@ -137,7 +183,7 @@ full_eval_metrics["entity_types"] = by_entity.to_dict("index")
 print(by_entity)
 
 ## LABEL FREQUENCY
-print("Perfomance by label frquency: ")
+print("Perfomance by label frequency: ")
 ds = GNDDataset(
     data_dir="dataset",
     gnd_graph=gnd_graph,
@@ -153,6 +199,14 @@ gold_df = add_label_freq_info(gold_df, label_freq)
 by_freq = eval_by(long_df, gold_df, by="label-freq")
 full_eval_metrics["label_frequencies"] = by_freq.to_dict("index")
 print(by_freq)
+
+## Similarity
+long_df = bin_similarity(long_df)
+gold_df = bin_similarity(gold_df)
+
+by_sim = eval_by(long_df, gold_df, by="similarity")
+full_eval_metrics["similarity"] = by_sim.to_dict("index")
+print(by_sim)
 
 ## GENRES
 print("Perfomance by document genres: ")
@@ -176,9 +230,8 @@ bertscore = load("bertscore")
 meteor = load('meteor')
 rouge = load('rouge')
 
-# gold_names = [gnd_graph.pref_label_name(label_id) for label_id in test_df["label-ids"]]
 test_df["label-names"] = test_df["label-ids"].apply(
-    lambda x: [gnd_graph.pref_label_name(idn) for idn in x]
+    lambda x: [gnd_graph.pref_label_name(idn) for idn in x if idn in gnd_graph]
 )
 gold_labels = test_df["label-names"].apply(lambda x: f"{SEP_TOKEN} ".join(x))
 
@@ -213,70 +266,11 @@ if "raw_predictions" in test_df.columns:
     print(f"Rouge: {rouge_results}")
     full_eval_metrics["rouge"] = {k: float(v) for k, v in rouge_results.items()}
 
-# Group Labels by their similarity to the title.
-sent_model = SentenceTransformer("BAAI/bge-m3")
-tokenizer = sent_model.tokenizer
-
-idnl2index = {}
-index2idn = {}
-i = 0
-for idns in tqdm(test_df["label-ids"]):
-    for idn in idns:
-        if idn not in idnl2index:
-            idnl2index[idn] = i
-            index2idn[i] = idn
-            i += 1
-
-emb_title =  sent_model.encode(test_df["title"], batch_size=256, show_progress_bar=True)
-gold_strings = [gnd_graph.pref_label_name(idn) for idn in idnl2index.keys()]
-emb_gold = sent_model.encode(gold_strings, batch_size=256, show_progress_bar=True)
-
-similarity_dict = {}
-
-for i, row in tqdm(test_df.iterrows(), total=len(test_df)):
-    gold_labels = row["label-ids"]
-    for g in gold_labels:
-        g_i = idnl2index[g]
-        sim = sent_model.similarity(emb_title[i], emb_gold[g_i])
-        correct = g in row["predictions"]
-        similarity_dict[(row["title"], g)] = {
-            "similarity": sim,
-            "correct": correct,
-        }
-
-grouped_sim = {
-    "not-similar": [],
-    "somewhat-similar": [],
-    "similar": [],
-    "very-similar": [],
-}
-
-for (title, label_name), value in similarity_dict.items():
-    sim = value["similarity"]
-    correct = value["correct"]
-    if sim < 0.25:
-        grouped_sim["not-similar"].append(correct)
-    elif sim < 0.5:
-        grouped_sim["somewhat-similar"].append(correct)
-    elif sim < 0.75:
-        grouped_sim["similar"].append(correct)
-    else:
-        grouped_sim["very-similar"].append(correct)
-
-for group, values in grouped_sim.items():
-    grouped_sim[group] = mean(values) if values else 0.0
-
-print("Performance grouped by similarity to title:")
-for group, value in grouped_sim.items():
-    print(f"{group}: {value}")
-full_eval_metrics["similarity_to_title"] = grouped_sim
-
-print(full_eval_metrics)
-# # Save all metrics to a YAML file
-# file_name = os.path.basename(pred_file).split(".")[0]
-# eval_path = os.path.join(os.path.dirname(pred_file), f"{file_name}_eval.yaml")
-# with open(eval_path, "w") as f:
-#     yaml.dump(full_eval_metrics, f, indent=2, sort_keys=False, allow_unicode=True)
+# Save all metrics to a YAML file
+file_name = "dev" #os.path.basename(pred_file).split(".")[0]
+eval_path = os.path.join(os.path.dirname(file), f"{file_name}_eval.yaml")
+with open(eval_path, "w") as f:
+    yaml.dump(full_eval_metrics, f, indent=2, sort_keys=False, allow_unicode=True)
 
 
 
