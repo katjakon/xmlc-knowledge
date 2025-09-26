@@ -1,6 +1,6 @@
 model_name: meta-llama/Llama-3.2-3B-Instruct
 sentence_transformer_model: BAAI/bge-m3
-experiment_name: few-shot-random
+experiment_name: few-shot-random-3b
 checkpoint_path: models
 graph_path: gnd/gnd.pickle
 dataset_path: dataset

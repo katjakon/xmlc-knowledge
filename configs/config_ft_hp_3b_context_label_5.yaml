@@ -1,11 +1,13 @@
-model_name: meta-llama/Llama-3.1-8B-Instruct
-sentence_transformer_model: BAAI/bge-m3
-experiment_name: few-shot-retrieval-8b
+
+
+model_name: meta-llama/Llama-3.1-3B-Instruct
+sentence_transformer_model: KatjaK/gnd_retriever_full
+experiment_name: hard-prompting-3b-context-label-5-ft
 checkpoint_path: models
 graph_path: gnd/gnd.pickle
-dataset_path: dataset
+dataset_path: dataset/
 num_epochs: 1
-batch_size: 32
+batch_size: 32  
 learning_rate: 5e-5
 warmup_rate: 0.05
 max_grad_norm: 1.0
@@ -21,8 +23,8 @@ sort_by_freq: true
 use_k_freq_labels: 0 # Use 0 to disable k-freq labels, or set to a positive integer
 
 context:
-  context_type: null # Choices: "text" or "graph". Use null if no context is needed.
-  top_k: 0 # How many instances to retrieve
+  context_type: text # Choices: "text" or "graph". Use null if no context is needed.
+  top_k: 5 # How many instances to retrieve
   hops: 0 # Also include hops in the knowledge graph from retrieved instances
   title_wise: false # Whether to retrieve title-to-label or title-to-title
   relation: null # Choices: null (use all relations) "broader" or "related"

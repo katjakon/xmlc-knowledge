@@ -1,6 +1,6 @@
 model_name: meta-llama/Llama-3.2-3B
 sentence_transformer_model: BAAI/bge-m3
-experiment_name: prompt-tuning-from_gnd
+experiment_name: prompt-tuning-from_gnd-3B
 checkpoint_path: models_gnd
 graph_path: data/gnd.pickle
 dataset_path: datasets/no_context
