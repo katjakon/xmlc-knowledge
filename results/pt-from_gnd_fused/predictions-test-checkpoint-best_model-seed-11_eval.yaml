@@ -1,80 +1,161 @@
-recall: 0.3900427092517656
-precision: 0.4424799370663407
-f1: 0.3908877160465899
-jaccard: 0.19544385802329495
 weighted_precision: 0.489613124385937
+recall: 0.3900427092517656
+precision: 0.44247993706634065
+f1: 0.39088771604658995
+n_gold: 3.570953173282624
+n_pred: 2.8885191347753745
 recall@1: 0.254071148063304
 precision@1: 0.5776087473258854
 f1@1: 0.3213865163175836
 recall@3: 0.3751741005871027
 precision@3: 0.4633745345059821
-f1@3: 0.3916252402275347
+f1@3: 0.39162524022753475
 recall@5: 0.3898033080407694
-precision@5: 0.4430294746850487
-f1@5: 0.3910756946199221
-recall@10: 0.3900427092517656
-precision@10: 0.4424799370663407
-f1@10: 0.3908877160465899
-label_frequencies:
-  0:
-    precision: 0.094896331738437
-    recall: 0.09409888357256778
-    support: 813
-  1:
-    precision: 0.09130434782608696
-    recall: 0.09028985507246377
-    support: 704
-  10:
-    precision: 0.12854010025062657
-    recall: 0.12008384055376536
-    support: 1961
-  100:
-    precision: 0.1848242660455864
-    recall: 0.16788890595458014
-    support: 4934
-  1000:
-    precision: 0.31467914715712425
-    recall: 0.269892648058404
-    support: 2752
-  .inf:
-    precision: 0.3984625988563772
-    recall: 0.4024677188695135
-    support: 221
+precision@5: 0.44302947468504866
+f1@5: 0.39107569461992214
 entity_types:
-  Sachbegriff:
-    precision: 0.18017368857267274
-    recall: 0.16133964410155674
   Geografikum:
-    precision: 0.2582256854791854
-    recall: 0.25039148674950534
-  Person (individualisiert):
-    precision: 0.3368266885001365
-    recall: 0.31338700207154074
-  Werk:
-    precision: 0.09966342557965595
-    recall: 0.09529562932704294
-  Körperschaft:
-    precision: 0.1640429377385899
-    recall: 0.15141592185070446
+    recall: 0.5530649588289113
+    precision: 0.545823927765237
+    f1: 0.5494205862304021
+    n_gold: 2186
+    n_pred: 2215
   Konferenz:
-    precision: 0.07692307692307693
-    recall: 0.07692307692307693
-  null:
-    precision: 0.0
-    recall: 0.0
-avg_no_preds: 2.8885191347753745
+    recall: 0.1
+    precision: 0.16666666666666666
+    f1: 0.125
+    n_gold: 10
+    n_pred: 6
+  Körperschaft:
+    recall: 0.3374233128834356
+    precision: 0.4074074074074074
+    f1: 0.36912751677852346
+    n_gold: 489
+    n_pred: 405
+  Person (individualisiert):
+    recall: 0.4432882414151925
+    precision: 0.6339285714285714
+    f1: 0.5217391304347827
+    n_gold: 961
+    n_pred: 672
+  Sachbegriff:
+    recall: 0.2739815526518063
+    precision: 0.3422796235836374
+    f1: 0.3043459699453552
+    n_gold: 26020
+    n_pred: 20828
+  Werk:
+    recall: 0.14171122994652408
+    precision: 0.3212121212121212
+    f1: 0.1966604823747681
+    n_gold: 374
+    n_pred: 165
+label_frequencies:
+  x=0:
+    recall: 0.17116060961313012
+    precision: 0.13443830570902393
+    f1: 0.15059308922124806
+    n_gold: 853
+    n_pred: 1086
+  x=1:
+    recall: 0.14323962516733602
+    precision: 0.16537867078825347
+    f1: 0.15351506456241032
+    n_gold: 747
+    n_pred: 647
+  1<x<=10:
+    recall: 0.17022222222222222
+    precision: 0.3001567398119122
+    f1: 0.2172433352240499
+    n_gold: 2250
+    n_pred: 1276
+  10<x<=100:
+    recall: 0.22734699007163503
+    precision: 0.3612220447284345
+    f1: 0.2790590050134979
+    n_gold: 7957
+    n_pred: 5008
+  100<x<=1000:
+    recall: 0.3105182061471089
+    precision: 0.38359046283309955
+    f1: 0.34320799533904
+    n_gold: 12331
+    n_pred: 9982
+  x>1000:
+    recall: 0.4585308056872038
+    precision: 0.4296590007930214
+    f1: 0.4436256448047163
+    n_gold: 5908
+    n_pred: 6305
+similarity:
+  not similar:
+    recall: 0.1787941787941788
+    precision: 0.19413092550790068
+    f1: 0.18614718614718614
+    n_gold: 481
+    n_pred: 443
+  somewhat similar:
+    recall: 0.2245980620364857
+    precision: 0.2769138356804378
+    f1: 0.24802725968436154
+    n_gold: 18473
+    n_pred: 14983
+  similar:
+    recall: 0.4190121155638397
+    precision: 0.5251722929564303
+    f1: 0.4661240993209269
+    n_gold: 10730
+    n_pred: 8561
+  very similar:
+    recall: 0.6987577639751553
+    precision: 0.7785467128027682
+    f1: 0.7364975450081834
+    n_gold: 322
+    n_pred: 289
+genres:
+  Arts and entertainment:
+    recall: 0.27815315315315314
+    precision: 0.3546302943287868
+    f1: 0.31177027453455347
+  General, Computer Science, Information Science:
+    recall: 0.32434127979924715
+    precision: 0.45231846019247596
+    f1: 0.37778589696748266
+  History and Geography:
+    recall: 0.31047619047619046
+    precision: 0.3915132105684548
+    f1: 0.34631728045325777
+  Literature:
+    recall: 0.30268199233716475
+    precision: 0.29404466501240695
+    f1: 0.2983008181246067
+  Natural sciences and mathematics:
+    recall: 0.38461538461538464
+    precision: 0.42665388302972196
+    f1: 0.4045454545454546
+  Philosophy and Psychology:
+    recall: 0.3392193308550186
+    precision: 0.402425578831312
+    f1: 0.3681290973272819
+  Religion:
+    recall: 0.2747148288973384
+    precision: 0.37170418006430866
+    f1: 0.31593331511341893
+  Social Sciences:
+    recall: 0.29050557324840764
+    precision: 0.36059295861642987
+    f1: 0.3217769938819379
+  Technology, medicine, applied sciences:
+    recall: 0.2817947985138611
+    precision: 0.3590023666484617
+    f1: 0.3157473380834201
 bertscore:
-  precision: 0.8282380320409826
-  recall: 0.8082815903806335
-  f1: 0.8169087140385034
+  precision: 0.8282380251199297
+  recall: 0.8082815845150945
+  f1: 0.8169087081162925
 meteor: 0.34201481250210536
 rouge:
-  rouge1: 0.4152476325698051
-  rouge2: 0.16400530198757313
-  rougeL: 0.3846611537615632
-  rougeLsum: 0.3845364376752244
-similarity_to_title:
-  not-similar: 0.17805383022774326
-  somewhat-similar: 0.22460270109019906
-  similar: 0.41912864622288704
-  very-similar: 0.7077363896848138
+  rouge1: 0.41517567918510817
+  rouge2: 0.16422071422590337
+  rougeL: 0.38463744753172285
+  rougeLsum: 0.3847050537014478
