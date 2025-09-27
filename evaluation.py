@@ -89,7 +89,7 @@ full_eval_metrics = {}
 test_df["predictions"] = test_df["predictions"].apply(literal_eval)
 test_df["label-ids"] = test_df["label-ids"].apply(literal_eval)
 
-if "reranked-predictions" not in test_df.columns:
+if "reranked-predictions" not in test_df.columns or "scores" not in test_df.columns:
     reranker = BGEReranker(reranker_str, device=DEVICE)
     test_df = reranker.rerank(
         test_df,
