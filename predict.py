@@ -30,6 +30,7 @@ parser.add_argument("--split", type=str, help="Split to use for evaluation.", de
 parser.add_argument("--checkpoint", type=str, help="Checkpoint to use for evaluation.", default="best_model")
 parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
 parser.add_argument("--dev", action='store_true', default=False)
+parser.add_argument("--map_model", action="Sentence model for mapping", default="BAAI/bge-m3")
 
 arguments = parser.parse_args()
 config_path = arguments.config
@@ -40,6 +41,7 @@ mapping_path = arguments.mapping
 split = arguments.split
 checkpoint = arguments.checkpoint
 dev = arguments.dev
+map_model = arguments.map_model
 
 # Set random seed for reproducibility
 set_seed(arguments.seed)
@@ -74,9 +76,8 @@ test_ds = gnd_ds[split]
 if dev:
     test_ds = test_ds.select(range(10))
 
-retriever_model = config["sentence_transformer_model"]
 retriever = Retriever(
-    retriever_model=retriever_model,
+    retriever_model=map_model ,
     graph=gnd_graph,
     device=DEVICE,
 )
@@ -193,4 +194,4 @@ if do_hard_prompt:
     chp_str = "hard_prompt"
 else:
     chp_str = f"checkpoint-{checkpoint}"
-pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-{chp_str}-seed-{arguments.seed}.csv"))
+pred_df.to_csv(os.path.join(result_dir, f"predictions-{split}-{chp_str}-seed-{arguments.seed}.csv"), index=False)
