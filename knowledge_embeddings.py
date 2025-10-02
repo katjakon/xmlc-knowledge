@@ -11,6 +11,9 @@ from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
 from torch import Tensor
 from tqdm import tqdm
 import pickle
+import os
+import json
+from networkx import is_path
 import numpy as np
 from gnd_graph import GNDGraph
 
@@ -23,20 +26,21 @@ label_strings, mapping = gnd_graph.mapping()
 idn2idx = {value: key for key, value in mapping.items()}
 
 model = SentenceTransformer(
-    'all-MiniLM-L6-v2',
+    'distiluse-base-multilingual-cased-v1',
     device=device
     )
+dim = 512
 
 head, tail = [], []
 
-for index, idn in mapping.items():
+for index, idn in tqdm(mapping.items()):
     neighbors = gnd_graph.neighbors(idn)
     neighbors_idx = [idn2idx[n_idn] for n_idn in neighbors]
     for n_idx in neighbors_idx:
         head.append(index)
         tail.append(n_idx)
 
-#label_embeddings  = torch.rand((len(label_strings), 384))
+#label_embeddings  = torch.rand((len(label_strings), dim))
 label_embeddings = model.encode(
     label_strings, 
     show_progress_bar=True,
@@ -49,8 +53,8 @@ data = Data(x=label_embeddings, edge_index=edge_index)
 transform = RandomLinkSplit(
     num_val=0.1,
     num_test=0.1,
-    is_undirected=True,
-    disjoint_train_ratio=0.3,
+    is_undirected=False,
+    disjoint_train_ratio=0.1,
     neg_sampling_ratio=2.0,
     add_negative_train_samples=False,
 )
@@ -107,21 +111,35 @@ class Model(torch.nn.Module):
     def forward(self, data: Data) -> Tensor:
         # Edge index is used for message passing. Includes neighbors etc.
         # Edge label index holds sampled edges which we want to predict.
-        x, edge_label_index, edge_index = data.x, data.edge_label_index, data.edge_index
+        edge_label_index = None
+        x, edge_index = data.x,data.edge_index
+        if "edge_label_index" in data:
+            edge_label_index = data.edge_label_index 
+        else:
+            edge_label_index = edge_index
         x = self.label_lin(x)
         x = self.gnn(x, edge_index)
         pred = self.classifier(x, edge_label_index)
-        return pred
+        return pred, x
 
-model = Model(hidden_channels=128, x_size=384).to(device)
+# for sampled_data in train_loader:
+#     for idx, (head, tail) in enumerate(zip(sampled_data.edge_label_index[0], sampled_data.edge_label_index[1])):
+#         global_head, global_tail = int(sampled_data.n_id[head]), int(sampled_data.n_id[tail])
+#         idn_head, idn_tail = mapping[global_head], mapping[global_tail]
+#         print(gnd_graph.pref_label_name(idn_head), gnd_graph.pref_label_name(idn_tail))
+#         print(is_path(gnd_graph, [idn_head, idn_tail]), sampled_data.edge_label[idx])
+#     break
+# exit()
+model = Model(hidden_channels=128, x_size=dim).to(device)
+data.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-for epoch in range(30):
+for epoch in range(15):
     total_loss = total_examples = 0
     for sampled_data in tqdm(train_loader):
         optimizer.zero_grad()
         sampled_data.to(device)
         ground_truth = sampled_data.edge_label
-        pred = model(sampled_data)
+        pred, _ = model(sampled_data)
         loss = F.binary_cross_entropy_with_logits(pred, ground_truth)
         loss.backward()
         optimizer.step()
@@ -134,7 +152,8 @@ for epoch in range(30):
     for sampled_data in tqdm(val_loader):
         with torch.no_grad():
             sampled_data.to(device)
-            preds.append(model(sampled_data))
+            pred, _ = model(sampled_data)
+            preds.append(pred)
             ground_truths.append(sampled_data.edge_label)
     pred = torch.cat(preds, dim=0).cpu().numpy()
     pred_binary = ( pred >= 0.5).astype(int)     
@@ -146,4 +165,11 @@ for epoch in range(30):
     print(f"Precision: {prec[0]:.4f}")
     print(f"Recall: {prec[1]:.4f}")
     print(f"F1: {prec[2]:.4f}")
-
+out_dir = "kge"
+torch.save(model.state_dict(), os.path.join(out_dir, "sage.pt"))
+# Generate embeddings for all labels
+pred, x = model(data)
+torch.save(x, os.path.join(out_dir, "embeddings.pt"))
+mapping_path = os.path.join(out_dir, "mapping.json")
+with open(mapping_path, 'w') as f:
+    json.dump(mapping, f, indent=4)
