@@ -112,7 +112,6 @@ data_collator = DataCollator(
         device=DEVICE,
         use_context=config["context"]["context_type"] is not None,
         top_k=config["context"]["top_k"],
-        hard_prompt=False,
         retriever=retriever
     )
 

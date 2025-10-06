@@ -39,10 +39,15 @@ class Retriever:
     def fit(self, batch_size=256, with_alt_labels=False):
         label_strings, mapping = self.graph.mapping(with_alt_labels=with_alt_labels)
         self.index = faiss.IndexHNSWFlat(self.dim, self.M)
-        label_embeddings = self.retriever.encode(label_strings, show_progress_bar=True, batch_size=batch_size)
-        self.index.add(label_embeddings)
+        embeddings = self.retriever.encode(label_strings, show_progress_bar=True, batch_size=batch_size)
+        self.index.add(embeddings)
         self.mapping = mapping
         return self.index
+    
+    def embeddings(self, batch_size=256, with_alt_labels=False):
+        label_strings, idx2idn = self.graph.mapping(with_alt_labels=with_alt_labels)
+        embeddings = self.retriever.encode(label_strings, show_progress_bar=True, batch_size=batch_size)
+        return idx2idn, embeddings
     
     def get_neighbors(self, list_idns, k, relation=None):
         retrieved_labels_plus = []
@@ -58,12 +63,9 @@ class Retriever:
     
     def retrieve_with_neighbors(self, texts, k=2, top_k=10, batch_size=256, relation=None):
         """
-        graph: networkx.Graph
-        mapping: dict
-        index : faiss.IndexHNSWFlat
         texts: list of strings
-        k: int
-        top_k: int
+        k: int, of the retrieved labels also get neighbors in k hops.
+        top_k: int, retrieve top k similar labels
         batch_size: int
 
         Returns:

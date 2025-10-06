@@ -1,5 +1,6 @@
 from typing import Any
 import torch
+import torch_geometric as pyg
 from utils import SEP_TOKEN
 from prompt_str import SUFFIX_PROMPT, PREFIX_PROMPT, SYSTEM_PROMPT_EXAMPLE
 from retriever import Retriever
@@ -13,16 +14,38 @@ def format_string(input_text: str, label_list: list, prefix: str = "", suffix: s
 
 class DataCollator:
 
-    def __init__(self, tokenizer, graph, device, retriever=None, use_context = False, top_k=3, hard_prompt=True) -> None:
+    def __init__(self, tokenizer, graph, device, retriever=None, use_context = False, top_k=3, hops=0, graph_based=False) -> None:
         self.tokenizer = tokenizer
         self.use_context = use_context  # Whether to use context
         self.top_k = top_k  # Number of neighbors to retrieve
+        self.hops = hops # Number of neighbors to get from top k retrieved neighbors.
         self.device = device
         self.graph = graph  
         self.retriever = retriever
-        self.hard_prompt = hard_prompt
-
-
+        self.graph_based = graph_based
+        self.graph_data = None
+        if self.graph_based:
+            if self.retriever is None:
+                raise ValueError("Need retriever to generate graph data.")
+            self.graph_data = self.get_graph_data()
+    
+    def get_graph_data(self):
+        idx2idn, embeddings = self.retriever.embeddings()
+        embeddings = torch.tensor(embeddings)
+        idn2idx = {idn: idx for idx, idn in idx2idn.items()}
+        head, tail = [], []
+        for index, idn in idx2idn.items():
+            neighbors = self.graph.neighbors(idn)
+            neighbors_idx = [idn2idx[n_idn] for n_idn in neighbors]
+            for n_idx in neighbors_idx:
+                head.append(index)
+                tail.append(n_idx)
+        return {
+            "data": pyg.data.Data(x=embeddings, edge_index=torch.tensor([head, tail])),
+            "idn2idx": idn2idx, 
+            "idx2idn": idx2idn
+            }
+    
     def tokenize(self, batch, suffix="", prefix="", max_length=55):
 
         texts = [
@@ -131,14 +154,26 @@ class DataCollator:
             if self.retriever is None:
                 raise ValueError("Retriever must be provided for context retrieval.")
             context_idns = self.retriever.retrieve_with_neighbors(
-                texts= [item["title"] for item in batch_list],
-                top_k=self.top_k,
-                batch_size=len(batch_list),
+                texts=[item["title"] for item in batch_list],
+                top_k=self.top_k, 
+                k=self.hops
             )
-            context_str = [
-                [self.graph.pref_label_name(idn) for idn in idn_list]
-                for idn_list in context_idns]
-            context_batch = self.tokenize_context(context_str, max_length=max_context_len)
+            if self.graph_based is False: # Only use text-based information
+                context_str = [
+                    [self.graph.pref_label_name(idn) for idn in idn_list]
+                    for idn_list in context_idns]
+                context_batch = self.tokenize_context(context_str, max_length=max_context_len)
+            else:
+                if self.graph_data is None: 
+                    raise ValueError("No graph data was generated!")
+                idn2idx = self.graph_data["idn2idx"]
+                graph_data = self.graph_data["data"]
+                context_idx = [
+                    [idn2idx[idn] for idn in idn_list]
+                      for idn_list in context_idns]
+                graph_batch = [graph_data.subgraph(torch.tensor(indices)) for indices in context_idx]
+                graph_batch = pyg.data.Batch.from_data_list(graph_batch)
+                context_batch = {"graph_batch": graph_batch}
             batch.update(context_batch)
         if keys is not None:
             batch = {key: batch[key] for key in keys if key in batch}
