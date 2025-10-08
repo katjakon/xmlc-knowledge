@@ -378,6 +378,7 @@ class GenerativePromptLlama(LlamaForCausalLM):
             position_ids: Optional[torch.LongTensor] = None,
             seq_lengths: Optional[torch.LongTensor] = None,
             context_lengths: Optional[torch.LongTensor] = None,
+            graph_batch: Optional[pyg.data.Data] = None,
             past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
             inputs_embeds: Optional[torch.FloatTensor] = None,
             labels: Optional[torch.LongTensor] = None,

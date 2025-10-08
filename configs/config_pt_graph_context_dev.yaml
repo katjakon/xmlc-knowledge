@@ -1,9 +1,9 @@
 
-
 model_name: meta-llama/Llama-3.2-3B
 sentence_transformer_model: KatjaK/gnd_retriever_full
 experiment_name: pt-graph
 checkpoint_path: pt_models
+eval_steps: 50
 
 context:
   context_type: "graph" # Choices: "text" or "graph". Use null if no context is needed.
@@ -20,7 +20,7 @@ prompt_config:
   hidden_size: 3072
   down_project_size: 1024
   dropout: 0.1
-  type: "context" # Choices: "hidden_states", "random" or "context"
+  type: "graph_context" # Choices: "hidden_states", "random" or "context"
   gnn_hidden_size: 512
   gnn_n_layers: 2
   kge_size: 1024

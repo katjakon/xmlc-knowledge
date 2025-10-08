@@ -30,7 +30,8 @@ num_validate = arguments.num_validate
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
-config = default_config.update(config)
+default_config.update(config)
+config = default_config
 
 exp_name = config["experiment_name"]
 
@@ -121,7 +122,7 @@ data_collator = DataCollator(
     )
 if graph_based: 
     data_collator.get_graph_data()
-
+    
 if dev:
     # For development, use a smaller subset of the dataset
     train_ds = train_ds.select(range(10_000))
