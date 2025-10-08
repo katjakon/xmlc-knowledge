@@ -10,6 +10,7 @@ from transformers import  pipeline, set_seed
 from tqdm import tqdm
 
 from data_collator import DataCollator
+from default_config import default_config
 from gnd_dataset import GNDDataset
 from gnd_graph import GNDGraph
 from retriever import Retriever
@@ -49,6 +50,7 @@ set_seed(arguments.seed)
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
+config = default_config.update(config)
 
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
