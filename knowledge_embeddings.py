@@ -133,7 +133,7 @@ class Model(torch.nn.Module):
 model = Model(hidden_channels=128, x_size=dim).to(device)
 data.to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-for epoch in range(15):
+for epoch in range(2):
     total_loss = total_examples = 0
     for sampled_data in tqdm(train_loader):
         optimizer.zero_grad()
@@ -168,7 +168,8 @@ for epoch in range(15):
 out_dir = "kge"
 torch.save(model.state_dict(), os.path.join(out_dir, "sage.pt"))
 # Generate embeddings for all labels
-pred, x = model(data)
+with torch.no_grad():
+    pred, x = model(data)
 torch.save(x, os.path.join(out_dir, "embeddings.pt"))
 mapping_path = os.path.join(out_dir, "mapping.json")
 with open(mapping_path, 'w') as f:
