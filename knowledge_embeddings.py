@@ -1,20 +1,22 @@
-from torch_geometric.nn import TransE
-from sentence_transformers import SentenceTransformer
-from torch_geometric.data import Data, HeteroData
-from torch_geometric.nn import TransE, GAT
-from torch_geometric.transforms import ToUndirected, RandomLinkSplit
-from torch_geometric.loader import LinkNeighborLoader
-from torch_geometric.nn import SAGEConv, GATConv
-import torch.nn.functional as F
-import torch
-from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
-from torch import Tensor
-from tqdm import tqdm
+import argparse
 import pickle
 import os
 import json
+
 from networkx import is_path
 import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
+import torch
+from torch import Tensor
+from torch_geometric.data import Data
+from torch_geometric.transforms import ToUndirected, RandomLinkSplit
+from torch_geometric.loader import LinkNeighborLoader
+from torch_geometric.nn import SAGEConv
+import torch.nn.functional as F
+from transformers import get_linear_schedule_with_warmup
+from tqdm import tqdm
+
 from gnd_graph import GNDGraph
 
 device = "cuda"
@@ -26,10 +28,14 @@ label_strings, mapping = gnd_graph.mapping()
 idn2idx = {value: key for key, value in mapping.items()}
 
 model = SentenceTransformer(
-    'distiluse-base-multilingual-cased-v1',
+    'BAAI/bge-m3',
     device=device
     )
-dim = 512
+dim = model.get_sentence_embedding_dimension()
+n_epochs = 20
+lr = 0.001
+warmup_rate = 0.03
+out_dir = "kge"
 
 head, tail = [], []
 
@@ -40,7 +46,6 @@ for index, idn in tqdm(mapping.items()):
         head.append(index)
         tail.append(n_idx)
 
-#label_embeddings  = torch.rand((len(label_strings), dim))
 label_embeddings = model.encode(
     label_strings, 
     show_progress_bar=True,
@@ -52,13 +57,13 @@ data = Data(x=label_embeddings, edge_index=edge_index)
 
 transform = RandomLinkSplit(
     num_val=0.1,
-    num_test=0.1,
+    num_test=0.0,
     is_undirected=False,
     disjoint_train_ratio=0.1,
     neg_sampling_ratio=2.0,
     add_negative_train_samples=False,
 )
-#     rev_edge_types=("label", "rev_connected", "label")
+
 train_data, val_data, test_data = transform(data)
 
 train_loader = LinkNeighborLoader(
@@ -122,18 +127,16 @@ class Model(torch.nn.Module):
         pred = self.classifier(x, edge_label_index)
         return pred, x
 
-# for sampled_data in train_loader:
-#     for idx, (head, tail) in enumerate(zip(sampled_data.edge_label_index[0], sampled_data.edge_label_index[1])):
-#         global_head, global_tail = int(sampled_data.n_id[head]), int(sampled_data.n_id[tail])
-#         idn_head, idn_tail = mapping[global_head], mapping[global_tail]
-#         print(gnd_graph.pref_label_name(idn_head), gnd_graph.pref_label_name(idn_tail))
-#         print(is_path(gnd_graph, [idn_head, idn_tail]), sampled_data.edge_label[idx])
-#     break
-# exit()
+total_steps = len(train_loader) * n_epochs
 model = Model(hidden_channels=128, x_size=dim).to(device)
-data.to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-for epoch in range(2):
+optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+scheduler = get_linear_schedule_with_warmup(
+    optimizer,
+    num_warmup_steps=int(warmup_rate* total_steps),
+    num_training_steps=total_steps,
+)
+
+for epoch in range(n_epochs):
     total_loss = total_examples = 0
     for sampled_data in tqdm(train_loader):
         optimizer.zero_grad()
@@ -143,9 +146,11 @@ for epoch in range(2):
         loss = F.binary_cross_entropy_with_logits(pred, ground_truth)
         loss.backward()
         optimizer.step()
+        scheduler.step()
         total_loss += float(loss) * pred.numel()
         total_examples += pred.numel()
-    print(f"Epoch: {epoch:03d}, Loss: {total_loss / total_examples:.4f}")
+        lr = scheduler.get_lr()[0]
+    print(f"Epoch: {epoch:03d}, Loss: {total_loss / total_examples:.4f}. LR: {lr:.4f}")
 
     preds = []
     ground_truths = []
@@ -165,10 +170,11 @@ for epoch in range(2):
     print(f"Precision: {prec[0]:.4f}")
     print(f"Recall: {prec[1]:.4f}")
     print(f"F1: {prec[2]:.4f}")
-out_dir = "kge"
-torch.save(model.state_dict(), os.path.join(out_dir, "sage.pt"))
+
+torch.save(model.state_dict(), os.path.join(out_dir, "kge_model.pt"))
 # Generate embeddings for all labels
 with torch.no_grad():
+    data.to(device)
     pred, x = model(data)
 torch.save(x, os.path.join(out_dir, "embeddings.pt"))
 mapping_path = os.path.join(out_dir, "mapping.json")
