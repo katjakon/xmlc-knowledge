@@ -7,9 +7,10 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from data_collator import DataCollator
 from gnd_dataset import GNDDataset
+from prompt_generators import GraphContextPromptGenerator
 from utils import PAD_TOKEN
 
-subsample = False
+subsample = True
 device = "cuda" if torch.cuda.is_available() else "cpu"
 gnd = pickle.load(open("gnd/gnd.pickle", "rb"))
 gnd = GNDGraph(gnd)
@@ -17,9 +18,9 @@ gnd = GNDGraph(gnd)
 if subsample:
     gnd = gnd.subgraph(list(gnd.nodes)[:20])
 
-retriever = Retriever(retriever_model='BAAI/bge-m3', graph=gnd)
+retriever = Retriever(retriever_model="distiluse-base-multilingual-cased-v1", graph=gnd) # 'BAAI/bge-m3'
 retriever.fit()
-dim = 1024
+dim = retriever.dim
 
 tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B")
 tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
@@ -51,19 +52,30 @@ gat = pyg.nn.GAT(
             out_channels=dim,
             hidden_channels=256,
             num_layers=2)
+
+config = {
+    "hidden_size": 1024,
+    "num_prompt_tokens": 20,
+    "down_project_size": 512, 
+    "kge_size": dim,
+    "gnn_hidden_size": 256,
+    "gnn_n_layers": 2,
+    "dropout": 0.1
+}
+gnn_pg = GraphContextPromptGenerator(config)
+
 c = 0
 for i in dataloader:
     c += 1
-    if c >2:
+    if c >= 2:
         break
     g_batch = i["graph_batch"]
-    sep_graphs = g_batch.to_data_list()
-    print(sep_graphs)
-    output = gat(
-        x=g_batch.x,
-        edge_index=g_batch.edge_index
+    size = i["input_ids"].size()
+    hidden_states = torch.rand((size[0], size[1], config["hidden_size"]))
+    out =  gnn_pg(
+        graph_batch=g_batch, 
+        hidden_states=hidden_states, 
+        seq_lengths=i["seq_lengths"]
     )
-    _, counts = torch.unique(g_batch.batch, return_counts=True)
-    original_batch = torch.split(output, counts.tolist())
-    for graph in original_batch:
-        print(graph.size())
+    print(out)
+    print(out.shape)

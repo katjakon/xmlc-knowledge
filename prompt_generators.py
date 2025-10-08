@@ -1,6 +1,7 @@
 from copy import deepcopy
 import torch
 from torch import nn
+import torch_geometric as pyg
 
 class RandomPromptGenerator(nn.Module):
     def __init__(self, config) -> None:
@@ -91,6 +92,57 @@ class ContextPromptGenerator(nn.Module):
         hidden_states = self.proj_up(hidden_states)
         hidden_states = self.dropout(hidden_states)
         return hidden_states 
+
+
+class GraphContextPromptGenerator(nn.Module):
+
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.num_prompt_tokens = config["num_prompt_tokens"]
+        self.hidden_size = config["hidden_size"]
+        self.down_project_size =  config["down_project_size"]
+        self.kge_size = config["kge_size"]
+        self.gnn_hidden_size = config["gnn_hidden_size"]
+        self.gnn_n_layers = config["gnn_n_layers"]
+        self.proj_down = nn.Linear(self.hidden_size, self.down_project_size)
+        self.proj_down_context = nn.Linear(self.kge_size, self.down_project_size)
+        self.intermediate_act_fn = nn.SiLU()   
+        self.proj_up = nn.Linear(self.down_project_size,  self.hidden_size)
+        self.dropout = nn.Dropout(config["dropout"])
+        self.gat = pyg.nn.GAT(
+            in_channels=self.kge_size,
+            out_channels=self.kge_size,
+            hidden_channels=self.gnn_hidden_size ,
+            num_layers=self.gnn_n_layers)
+        self.adaptive_pooling = nn.AdaptiveAvgPool1d(self.num_prompt_tokens)
+    
+    def forward(self, graph_batch, hidden_states, seq_lengths):
+        graph_x, graph_edge_index = graph_batch.x, graph_batch.edge_index
+        # Employ GNN on graph data.
+        gat_out = self.gat(x=graph_x, edge_index=graph_edge_index)
+        # Seperate individual graphs for each instance in batch.
+        _, counts = torch.unique(graph_batch.batch, return_counts=True)
+        original_graphs_out = torch.split(gat_out, counts.tolist()) # List with len=B with each item: num_nodes x kge size
+        graph_context = []
+        for graph_out in original_graphs_out:
+            graph_out = self.proj_down_context(graph_out)
+            graph_context.append(graph_out)
+        hidden_states = self.proj_down(hidden_states)  
+        batch_prompts = []
+        for i in range(hidden_states.size(0)):
+            context_hidden_i = graph_context[i]
+            context_hidden_i = context_hidden_i.unsqueeze(0)
+            hidden_state = hidden_states[i]
+            hidden_state = hidden_state[0:seq_lengths[i], :].unsqueeze(0)
+            hidden_state = torch.cat([context_hidden_i, hidden_state], dim=1) 
+            hidden_state = hidden_state.transpose(1, 2) # B x D x L
+            hidden_state = (self.adaptive_pooling(hidden_state)).transpose(1, 2) # B x num_prompt_tokens x D
+            batch_prompts.append(hidden_state)
+        hidden_states = torch.cat(batch_prompts, dim=0)
+        hidden_states = self.intermediate_act_fn(hidden_states)
+        hidden_states = self.proj_up(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        return hidden_states
 
 class FusedPromptGenerator(nn.Module):
     def __init__(self, config, freeze_prompt=True) -> None:
