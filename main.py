@@ -108,14 +108,19 @@ if (
 else:
     retriever.fit(batch_size=1000)
 
+graph_based = "graph" in config["context"]["context_type"]
 data_collator = DataCollator(
         tokenizer=tokenizer,
         graph=gnd_graph,  
         device=DEVICE,
         use_context=config["context"]["context_type"] is not None,
         top_k=config["context"]["top_k"],
-        retriever=retriever
+        hops=config["context"]["hops"],
+        retriever=retriever, 
+        graph_based=graph_based
     )
+if graph_based: 
+    data_collator.get_graph_data()
 
 if dev:
     # For development, use a smaller subset of the dataset
@@ -139,9 +144,12 @@ prompt_type = config["prompt_config"]["type"]
 layer = config["prompt_config"]["at_layer"]
 num_tokens = config["prompt_config"]["num_prompt_tokens"]
 
+project_name = "xmlc-knowledge-final"
+if dev:
+    project_name = project_name + "-dev"
 wandb.init(
       # Set the project where this run will be logged
-      project="xmlc-knowledge-final",
+      project=project_name,
       name=f"{exp_name}",
       # Track hyperparameters and run metadata
       config={

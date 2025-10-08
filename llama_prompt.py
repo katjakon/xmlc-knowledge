@@ -1,5 +1,6 @@
 from typing import Callable, List, Optional, Tuple, Union
 
+import torch_geometric as pyg
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.models.llama.configuration_llama import LlamaConfig
@@ -22,7 +23,12 @@ import torch
 from torch.nn import CrossEntropyLoss
 import torch.nn as nn
 
-from prompt_generators import RandomPromptGenerator, HiddenStatePromptGenerator, ContextPromptGenerator, FusedPromptGenerator
+from prompt_generators import (
+    RandomPromptGenerator, 
+    HiddenStatePromptGenerator,
+    ContextPromptGenerator, 
+    GraphContextPromptGenerator,
+    FusedPromptGenerator)
 
 logger = logging.get_logger(__name__)
 
@@ -61,12 +67,14 @@ class BasePromptLlama(LlamaPreTrainedModel):
             self.prompt_generator = ContextPromptGenerator(config=self.prompt_config, embed=self.embed_tokens)
         elif self.prompt_config["type"] == "fused":
             self.prompt_generator = FusedPromptGenerator(config=self.prompt_config)
+        elif self.prompt_config["type"] == "graph_context":
+            self.prompt_generator = GraphContextPromptGenerator(config=self.prompt_config)
         else:
             raise ValueError(f"Unknown prompt type: {self.prompt_config['type']}")
         self.prompt_generator.to(self.embed_tokens.weight.device)
         return self.prompt_generator
     
-    def call_prompt(self, hidden_states=None, seq_lengths=None, context_ids=None, context_lengths=None):
+    def call_prompt(self, hidden_states=None, seq_lengths=None, context_ids=None, context_lengths=None, graph_batch=None):
         """Call the prompt generator."""
         if self.prompt_generator is None:
             raise ValueError("Prompt generator not initialized. Call `add_prompt()` first.")
@@ -82,6 +90,10 @@ class BasePromptLlama(LlamaPreTrainedModel):
             prefix = self.prompt_generator(hidden_states=hidden_states, context_ids=context_ids, seq_lengths=seq_lengths, context_lengths=context_lengths)
         elif self.prompt_config["type"] == "fused":
             prefix = self.prompt_generator(hidden_states=hidden_states, seq_lengths=seq_lengths)
+        elif self.prompt_config["type"] == "graph_context":
+            if graph_batch is None:
+                raise ValueError("Graph batch data is missing!")
+            prefix = self.prompt_generator(graph_batch=graph_batch, hidden_states=hidden_states, seq_lengths=seq_lengths)
         return prefix
 
     def forward(
@@ -91,6 +103,7 @@ class BasePromptLlama(LlamaPreTrainedModel):
             seq_lengths: Optional[torch.LongTensor] = None,
             context_lengths: Optional[torch.LongTensor] = None,
             context_ids: Optional[torch.LongTensor] = None,
+            graph_batch: Optional[pyg.data.Data] = None,
             position_ids: Optional[torch.LongTensor] = None,
             past_key_values: Optional[Cache] = None,
             inputs_embeds: Optional[torch.FloatTensor] = None,
@@ -156,7 +169,8 @@ class BasePromptLlama(LlamaPreTrainedModel):
                         hidden_states=hidden_states, 
                         seq_lengths=seq_lengths, 
                         context_ids=context_ids, 
-                        context_lengths=context_lengths
+                        context_lengths=context_lengths,
+                        graph_batch=graph_batch
                         )
                     hidden_states = torch.cat((prefix, hidden_states), dim=1)
                     attention_mask = torch.cat([prompt_attention_mask, attention_mask], dim=-1)
