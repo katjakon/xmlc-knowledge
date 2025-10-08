@@ -24,13 +24,10 @@ class DataCollator:
         self.retriever = retriever
         self.graph_based = graph_based
         self.graph_data = None
-        if self.graph_based:
-            if self.retriever is None:
-                raise ValueError("Need retriever to generate graph data.")
-            self.graph_data = self.get_graph_data()
     
-    def get_graph_data(self):
-        idx2idn, embeddings = self.retriever.embeddings()
+    def get_graph_data(self, embeddings=None, idx2idn=None):
+        if embeddings is None or idx2idn is None:
+            idx2idn, embeddings = self.retriever.embeddings()
         embeddings = torch.tensor(embeddings)
         idn2idx = {idn: idx for idx, idn in idx2idn.items()}
         head, tail = [], []
@@ -40,11 +37,12 @@ class DataCollator:
             for n_idx in neighbors_idx:
                 head.append(index)
                 tail.append(n_idx)
-        return {
+        self.graph_data = {
             "data": pyg.data.Data(x=embeddings, edge_index=torch.tensor([head, tail])),
             "idn2idx": idn2idx, 
             "idx2idn": idx2idn
             }
+        return self.graph_data
     
     def tokenize(self, batch, suffix="", prefix="", max_length=55):
 

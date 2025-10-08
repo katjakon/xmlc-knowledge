@@ -9,15 +9,17 @@ from data_collator import DataCollator
 from gnd_dataset import GNDDataset
 from utils import PAD_TOKEN
 
+subsample = False
 device = "cuda" if torch.cuda.is_available() else "cpu"
 gnd = pickle.load(open("gnd/gnd.pickle", "rb"))
 gnd = GNDGraph(gnd)
 
-gnd = gnd.subgraph(list(gnd.nodes)[:20])
+if subsample:
+    gnd = gnd.subgraph(list(gnd.nodes)[:20])
 
-dim = 512
-retriever = Retriever(retriever_model="distiluse-base-multilingual-cased-v1", graph=gnd)
+retriever = Retriever(retriever_model='BAAI/bge-m3', graph=gnd)
 retriever.fit()
+dim = 1024
 
 tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B")
 tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
@@ -31,6 +33,7 @@ collator = DataCollator(
     top_k=5, 
     hops=2
 )
+graph_data = collator.get_graph_data()
 
 data_path = "dataset"
 ds = GNDDataset(
