@@ -8,7 +8,6 @@ from transformers import AutoTokenizer
 from data_collator import DataCollator
 from gnd_dataset import GNDDataset
 from utils import PAD_TOKEN
-import numpy as np
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 gnd = pickle.load(open("gnd/gnd.pickle", "rb"))
