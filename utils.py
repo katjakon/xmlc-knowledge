@@ -10,7 +10,7 @@ from llama_prompt import GenerativePromptLlama
 
 PAD_TOKEN = "<|finetune_right_pad_id|>"
 EOT_TOKEN = "<|eot_id|>"
-BATCH_KEYS = ["input_ids", "attention_mask", "labels", "seq_lengths", "context_ids", "context_lengths"]
+BATCH_KEYS = ["input_ids", "attention_mask", "labels", "seq_lengths", "context_ids", "context_lengths", "graph_batch"]
 SEP_TOKEN = ";"
 
 def strip_uri(uris, prefix="<http://d-nb.info/gnd/", suffix=">"):
@@ -160,7 +160,11 @@ def generate_predictions(model, tokenizer, dataset, device="cuda", num_beams=1, 
     model.eval()
     predictions = []
     for title_batch in tqdm(dataset, desc="Generating labels..."):
-        title_batch = {k: v.to(device).unsqueeze(0) for k, v in title_batch.items() if k in BATCH_KEYS}
+        title_batch = {k: v.to(device) for k, v in title_batch.items() if k in BATCH_KEYS}
+        # .unsqueeze(0)
+        for k, v in title_batch.items():
+            if isinstance(v, torch.Tensor):
+                title_batch[k] = v.unsqueeze(0)
         with torch.no_grad():
             if isinstance(model, torch.nn.DataParallel):
                 gen_model = model.module

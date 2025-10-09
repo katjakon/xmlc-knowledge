@@ -404,7 +404,8 @@ class GenerativePromptLlama(LlamaForCausalLM):
                 hidden_states=inputs_embeds, 
                 seq_lengths=seq_lengths, 
                 context_ids=context_ids, 
-                context_lengths=context_lengths
+                context_lengths=context_lengths,
+                graph_batch=graph_batch
                 )
             attention_mask = torch.cat([
                 prompt_attention_mask,
@@ -425,6 +426,7 @@ class GenerativePromptLlama(LlamaForCausalLM):
             context_ids=context_ids,
             seq_lengths=seq_lengths,
             context_lengths=context_lengths,
+            graph_batch=graph_batch,
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,

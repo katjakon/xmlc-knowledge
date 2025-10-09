@@ -1,9 +1,8 @@
 
 model_name: meta-llama/Llama-3.2-3B
 sentence_transformer_model: KatjaK/gnd_retriever_full
-experiment_name: pt-graph
+experiment_name: pt-graph-10k-2hop
 checkpoint_path: pt_models
-eval_steps: 50
 
 context:
   context_type: "graph" # Choices: "text" or "graph". Use null if no context is needed.
