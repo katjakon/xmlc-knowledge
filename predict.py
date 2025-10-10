@@ -31,7 +31,7 @@ parser.add_argument("--split", type=str, help="Split to use for evaluation.", de
 parser.add_argument("--checkpoint", type=str, help="Checkpoint to use for evaluation.", default="best_model")
 parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
 parser.add_argument("--dev", action='store_true', default=False)
-parser.add_argument("--map_model", action="Sentence model for mapping", default="BAAI/bge-m3")
+parser.add_argument("--map_model", help="Sentence model for mapping", default="BAAI/bge-m3")
 
 arguments = parser.parse_args()
 config_path = arguments.config
@@ -50,7 +50,8 @@ set_seed(arguments.seed)
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
-config = default_config.update(config)
+default_config.update(config)
+config = default_config
 
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
@@ -138,14 +139,20 @@ else:
         device=DEVICE,
     )
     context_retriever.fit(batch_size=1000)
+    graph_based = "graph" in config["context"]["context_type"]
     data_collator = DataCollator(
         tokenizer=tokenizer,
         graph=gnd_graph,  
         device=DEVICE,
         use_context=config["context"]["context_type"] is not None,
         top_k=config["context"]["top_k"],
-        retriever=context_retriever
+        hops=config["context"]["hops"],
+        retriever=context_retriever,
+        graph_based=graph_based
     )
+    if graph_based: 
+        data_collator.get_graph_data()
+    
     loader = torch.utils.data.DataLoader(
         test_ds,
         batch_size=1,
