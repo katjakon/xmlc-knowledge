@@ -54,7 +54,6 @@ parser = argparse.ArgumentParser(description="Evaluate the model on the GND data
 parser.add_argument("--reranker_model", type=str, help="Name of the reranker model.", default="BAAI/bge-reranker-v2-m3")
 parser.add_argument("--predictions_file", type=str, help="Path to the predictions file.")
 parser.add_argument("--write_reranked", type=bool, default=True, help="Whether to write the reranked predictions to the given file.")
-parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--dataset_path", help="Path to dataset", default="dataset")
 parser.add_argument("--gnd_path", help="Path to gnd file", default="gnd/gnd.pickle")
 parser.add_argument("--sentence_model", help="String that defines sentence transformer", default="BAAI/bge-m3")
