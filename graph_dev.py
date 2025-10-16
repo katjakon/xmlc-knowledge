@@ -1,9 +1,13 @@
 import pickle
 from gnd_graph import GNDGraph
 import torch
+from torch import Tensor
 import torch_geometric as pyg
+import torch_geometric.transforms as T
+from torch_geometric.loader import LinkNeighborLoader
 from retriever import Retriever
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 from transformers import AutoTokenizer
 from data_collator import DataCollator
 from gnd_dataset import GNDDataset
@@ -11,7 +15,7 @@ from prompt_generators import GraphContextPromptGenerator
 from utils import PAD_TOKEN
 from tqdm import tqdm
 
-subsample = True
+subsample = False
 device = "cuda" if torch.cuda.is_available() else "cpu"
 gnd = pickle.load(open("gnd/gnd.pickle", "rb"))
 gnd = GNDGraph(gnd)
@@ -43,15 +47,18 @@ for index, idn in idx2idn.items():
         head.append(index)
         tail.append(n_idx)
 
-label_edge_index = [head, tail]
+label_edge_index =  torch.tensor([head, tail], dtype=torch.int32)
 data["label"].node_id = torch.arange(len(idn2idx))
 data["label"].x = embeddings
-data["label", "connects", "label"].edge_index = label_edge_index
-
+data["label", "connect", "label"].edge_index = label_edge_index
 head_t, tail_t = [], []
-train_docs = ds["train"].select(range(100))
+train_docs = ds["train"]
 
-all_title_embed = []
+if subsample:
+    train_docs = train_docs.select(range(100))
+title_strings = list(train_docs["title"])
+#title_embeddings = retriever.retriever.encode(title_strings, batch_size=256, show_progress_bar=True, convert_to_tensor=True)
+title_embeddings = torch.rand((len(title_strings), dim))
 for index, doc_record in tqdm(enumerate(train_docs)):
     title = doc_record["title"]
     gold_labels = doc_record["label-ids"]
@@ -62,23 +69,77 @@ for index, doc_record in tqdm(enumerate(train_docs)):
             continue
         head_t.append(index)
         tail_t.append(label_idx)
-    title_embedding = retriever.retriever.encode([title])
-    title_embedding = torch.tensor(title_embedding)
-    all_title_embed.append(title_embedding)
 
-print(head_t)
-title_embeddings = torch.cat(all_title_embed)
+title_edge_index = torch.tensor([head_t, tail_t], dtype=torch.int32)
 data["title"].x = title_embeddings
 data["title"].node_id = torch.arange(title_embeddings.size()[0])
-data["title", "associate", "label"].edge_index = [head_t, tail_t]
+data["title", "associate", "label"].edge_index = title_edge_index
+data = T.ToUndirected()(data)
+
+class GNN(torch.nn.Module):
+    def __init__(self, hidden_channels):
+        super().__init__()
+        self.hetero_conv = pyg.nn.HeteroConv(
+            {
+            ("title", "associate", "label"): pyg.nn.SAGEConv(hidden_channels, hidden_channels),
+            ("label", "connect", "label"): pyg.nn.SAGEConv(hidden_channels, hidden_channels)
+            },
+         aggr='sum'
+        )
+        self.label_embed = torch.nn.Embedding(data["label"].num_nodes, hidden_channels)
+        self.title_embed = torch.nn.Embedding(data["title"].num_nodes, hidden_channels)
+
+    def forward(self, data: pyg.data.HeteroData) -> Tensor:
+        x_dict = {
+          "label": self.label_embed(data["label"].node_id),
+          "title": self.title_embed(data["title"].node_id),
+        } 
+        x = self.hetero_conv(x_dict, data.edge_index_dict)
+        print(x)
+        x = F.relu(x)
+        return x
+
+gnn = GNN(dim)
 
 print(data)
 
-graph_data = {
-"data": pyg.data.Data(x=embeddings, edge_index=torch.tensor([head, tail])),
-"idn2idx": idn2idx, 
-"idx2idn": idx2idn
-}
+transform = T.RandomLinkSplit(
+    num_val=0.1,
+    num_test=0.1,
+    is_undirected=False,
+    disjoint_train_ratio=0.1,
+    neg_sampling_ratio=2.0,
+    add_negative_train_samples=False,
+    edge_types=("title", "associate", "label"),
+    rev_edge_types=("label", "rev_associate", "title")
+)
+
+train_data, val_data, test_data = transform(data)
+
+edge_label_index = train_data["title", "associate", "label"].edge_label_index
+edge_label = train_data["title", "associate", "label"].edge_label
+train_loader = LinkNeighborLoader(
+    data=train_data,
+    num_neighbors=[20, 10],
+    neg_sampling_ratio=2.0,
+    edge_label_index=(("title", "associate", "label"), edge_label_index),
+    edge_label=edge_label,
+    batch_size=4,
+    shuffle=True,
+)
+
+for batch in train_loader:
+    print(batch)
+    out = gnn(batch)
+    print(out)
+    break
+
+
+# graph_data = {
+# "data": pyg.data.Data(x=embeddings, edge_index=torch.tensor([head, tail])),
+# "idn2idx": idn2idx, 
+# "idx2idn": idx2idn
+# }
 
 # tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B")
 # tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)

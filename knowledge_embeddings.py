@@ -12,17 +12,20 @@ from torch import Tensor
 from torch_geometric.data import Data
 from torch_geometric.transforms import ToUndirected, RandomLinkSplit
 from torch_geometric.loader import LinkNeighborLoader
-from torch_geometric.nn import SAGEConv
+from torch_geometric.nn import SAGEConv, GAT
 import torch.nn.functional as F
 from transformers import get_linear_schedule_with_warmup
 from tqdm import tqdm
 
 from gnd_graph import GNDGraph
+from gnd_dataset import GNDDataset
 
 device = "cuda"
 gnd_path  = "gnd/gnd.pickle"
 gnd_graph = pickle.load(open(gnd_path, "rb"))
 gnd_graph = GNDGraph(gnd_graph)
+
+data_path = "dataset"
 
 label_strings, mapping = gnd_graph.mapping()
 idn2idx = {value: key for key, value in mapping.items()}
@@ -32,6 +35,14 @@ model = SentenceTransformer(
     device=device
     )
 dim = model.get_sentence_embedding_dimension()
+
+data_path = "dataset"
+ds = GNDDataset(
+    data_dir=data_path,
+    gnd_graph=gnd_graph, 
+    load_from_disk=True,
+)
+subsample = False
 n_epochs = 20
 lr = 0.001
 warmup_rate = 0.03
@@ -48,12 +59,37 @@ for index, idn in tqdm(mapping.items()):
 
 label_embeddings = model.encode(
     label_strings, 
+    batch_size=1024,
     show_progress_bar=True,
     convert_to_tensor=True
     )
 
+train_docs = ds["train"]
+if subsample:
+    train_docs = train_docs.select(range(100))
+title_strings = list(train_docs["title"])
+title_embeddings = model.encode(
+    title_strings, 
+    batch_size=1024, 
+    show_progress_bar=True,
+    convert_to_tensor=True
+    )
+
+embeddings = torch.cat([label_embeddings, title_embeddings])
+for doc_record in tqdm(train_docs):
+    index += 1
+    title = doc_record["title"]
+    gold_labels = doc_record["label-ids"]
+    idn = doc_record["doc_idn"]
+    for label_idn in gold_labels:
+        label_idx = idn2idx.get(label_idn)
+        if label_idx is None:
+            continue
+        head.append(index)
+        tail.append(label_idx)
+
 edge_index = torch.tensor([head, tail], dtype=torch.long)
-data = Data(x=label_embeddings, edge_index=edge_index)
+data = Data(x=embeddings, edge_index=edge_index)
 
 transform = RandomLinkSplit(
     num_val=0.1,
@@ -149,7 +185,7 @@ for epoch in range(n_epochs):
         scheduler.step()
         total_loss += float(loss) * pred.numel()
         total_examples += pred.numel()
-        lr = scheduler.get_lr()[0]
+        lr = scheduler.get_last_lr()[0]
     print(f"Epoch: {epoch:03d}, Loss: {total_loss / total_examples:.4f}. LR: {lr:.4f}")
 
     preds = []
