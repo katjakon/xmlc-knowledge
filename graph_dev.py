@@ -47,7 +47,7 @@ for index, idn in idx2idn.items():
         head.append(index)
         tail.append(n_idx)
 
-label_edge_index =  torch.tensor([head, tail], dtype=torch.int32)
+label_edge_index =  torch.tensor([head, tail], dtype=torch.int64)
 data["label"].node_id = torch.arange(len(idn2idx))
 data["label"].x = embeddings
 data["label", "connect", "label"].edge_index = label_edge_index
@@ -70,7 +70,7 @@ for index, doc_record in tqdm(enumerate(train_docs)):
         head_t.append(index)
         tail_t.append(label_idx)
 
-title_edge_index = torch.tensor([head_t, tail_t], dtype=torch.int32)
+title_edge_index = torch.tensor([head_t, tail_t], dtype=torch.int64)
 data["title"].x = title_embeddings
 data["title"].node_id = torch.arange(title_embeddings.size()[0])
 data["title", "associate", "label"].edge_index = title_edge_index
