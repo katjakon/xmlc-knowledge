@@ -79,24 +79,25 @@ data = T.ToUndirected()(data)
 class GNN(torch.nn.Module):
     def __init__(self, hidden_channels):
         super().__init__()
+        self.lbl_title_conv = pyg.nn.SAGEConv(hidden_channels, hidden_channels)
+        self.lbl_lbl_conv = pyg.nn.SAGEConv(hidden_channels, hidden_channels)
         self.hetero_conv = pyg.nn.HeteroConv(
             {
-            ("title", "associate", "label"): pyg.nn.SAGEConv(hidden_channels, hidden_channels),
-            ("label", "connect", "label"): pyg.nn.SAGEConv(hidden_channels, hidden_channels)
+            ("title", "associate", "label"): self.lbl_title_conv,
+            ("label", "rev_associate", "title"): self.lbl_title_conv,
+            ("label", "connect", "label"): self.lbl_lbl_conv
             },
          aggr='sum'
         )
         self.label_embed = torch.nn.Embedding(data["label"].num_nodes, hidden_channels)
-        self.title_embed = torch.nn.Embedding(data["title"].num_nodes, hidden_channels)
 
     def forward(self, data: pyg.data.HeteroData) -> Tensor:
         x_dict = {
           "label": self.label_embed(data["label"].node_id),
-          "title": self.title_embed(data["title"].node_id),
+          "title": data["title"].x,
         } 
         x = self.hetero_conv(x_dict, data.edge_index_dict)
-        print(x)
-        x = F.relu(x)
+        x = {k: F.relu(v) for k, v in x.items()}
         return x
 
 gnn = GNN(dim)
@@ -121,10 +122,10 @@ edge_label = train_data["title", "associate", "label"].edge_label
 train_loader = LinkNeighborLoader(
     data=train_data,
     num_neighbors=[20, 10],
-    neg_sampling_ratio=2.0,
+    neg_sampling_ratio=0.0,
     edge_label_index=(("title", "associate", "label"), edge_label_index),
     edge_label=edge_label,
-    batch_size=4,
+    batch_size=1,
     shuffle=True,
 )
 

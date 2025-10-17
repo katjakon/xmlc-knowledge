@@ -96,7 +96,7 @@ class ContextPromptGenerator(nn.Module):
 
 class GraphContextPromptGenerator(nn.Module):
 
-    def __init__(self, config) -> None:
+    def __init__(self, config, embeddings) -> None:
         super().__init__()
         self.num_prompt_tokens = config["num_prompt_tokens"]
         self.hidden_size = config["hidden_size"]
@@ -109,6 +109,7 @@ class GraphContextPromptGenerator(nn.Module):
         self.intermediate_act_fn = nn.SiLU()   
         self.proj_up = nn.Linear(self.down_project_size,  self.hidden_size)
         self.dropout = nn.Dropout(config["dropout"])
+        self.embeddings = deepcopy(embeddings)
         self.gat = pyg.nn.GAT(
             in_channels=self.kge_size,
             out_channels=self.kge_size,
@@ -118,6 +119,7 @@ class GraphContextPromptGenerator(nn.Module):
     
     def forward(self, graph_batch, hidden_states, seq_lengths):
         graph_x, graph_edge_index = graph_batch.x, graph_batch.edge_index
+        graph_x = self.embed(graph_x)
         # Employ GNN on graph data.
         gat_out = self.gat(x=graph_x, edge_index=graph_edge_index)
         # Seperate individual graphs for each instance in batch.

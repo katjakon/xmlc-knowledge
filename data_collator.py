@@ -44,6 +44,15 @@ class DataCollator:
             }
         return self.graph_data
     
+    def add_graph_data(self, idn2idx, idx2idn, pyg_data):
+        self.graph_data = {
+            "idn2idx": idn2idx, 
+            "idx2idn": idx2idn,
+            "data": pyg_data
+
+        }
+        return self.graph_data
+
     def tokenize(self, batch, suffix="", prefix="", max_length=55):
 
         texts = [
