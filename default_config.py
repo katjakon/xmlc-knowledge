@@ -5,6 +5,7 @@ default_config = {
 "checkpoint_path": "pt_models",
 "graph_path": "gnd/gnd.pickle",
 "dataset_path": "dataset",
+"label_mapping_path": "mapping/label_mapping.feather",
 "num_epochs": 2,
 "batch_size": 32,
 "learning_rate": 5e-5,

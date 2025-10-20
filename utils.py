@@ -1,8 +1,10 @@
 import re
 
 import networkx as nx
+import pandas as pd
 from transformers import AutoTokenizer
 import torch
+from torch_geometric.data import Data
 from tqdm import tqdm
 from safetensors import safe_open
 
@@ -107,7 +109,7 @@ def init_tokenizer(model_name):
     tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
     return tokenizer
 
-def init_prompt_model(model_name, prompt_config, tune_lm_head=True):
+def init_prompt_model(model_name, prompt_config, tune_lm_head=True, embeddings=None):
     tokenizer = init_tokenizer(model_name)
     model = GenerativePromptLlama.from_pretrained(model_name, prompt_config=prompt_config)
     for param in model.parameters():
@@ -115,7 +117,7 @@ def init_prompt_model(model_name, prompt_config, tune_lm_head=True):
     if tune_lm_head: 
         for param in model.lm_head.parameters():
             param.requires_grad = True
-    model.model.add_prompt()
+    model.model.add_prompt(embeddings=None)
     return model, tokenizer
 
 def load_model(checkpoint_path, config, device, data_parallel=True, load=None):
@@ -198,3 +200,34 @@ def map_labels(prediction_list, retriever, k=1):
         current_mapping = list(set(current_mapping))
         mapped_predictions.append(current_mapping)
     return mapped_predictions
+
+def generate_graph_data(label_mapping_path, graph):
+    """
+    Generate data needed for GNN prompt generators.
+
+    Args:
+        label_mapping_path (str): Path to arrow file which contains mapping.
+        graph (networkx.DiGraph): Graph which contains label relation
+    
+    Returns:
+        3-Tuple with idn to index mapping, index to idn mapping and pytorch geometric data object.
+    """
+    df = pd.read_feather(label_mapping_path)
+    idx2idn, idn2idx = {}, {}
+    # Generate mappings from index to idn and reversed.
+    for idx, idn in zip(df["index"], df["idn"]):
+        idx2idn[idx] = idn
+        idn2idx[idn] = idx
+    # Create edge format for pyg data.
+    head, tail = [], []
+    for index, idn in idx2idn.items():
+        neighbors = graph.neighbors(idn)
+        neighbors_idx = [idn2idx[n_idn] for n_idn in neighbors]
+        for n_idx in neighbors_idx:
+            head.append(index)
+            tail.append(n_idx)
+    edge_index = torch.tensor([head, tail])
+    # Node features are indices for mapping to embeddings later.
+    x = torch.tensor(list(idx2idn.keys()))
+    data = Data(x=x, edge_index=edge_index)
+    return idn2idx, idx2idn, data

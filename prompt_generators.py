@@ -119,7 +119,7 @@ class GraphContextPromptGenerator(nn.Module):
     
     def forward(self, graph_batch, hidden_states, seq_lengths):
         graph_x, graph_edge_index = graph_batch.x, graph_batch.edge_index
-        graph_x = self.embed(graph_x)
+        graph_x = self.embeddings(graph_x)
         # Employ GNN on graph data.
         gat_out = self.gat(x=graph_x, edge_index=graph_edge_index)
         # Seperate individual graphs for each instance in batch.

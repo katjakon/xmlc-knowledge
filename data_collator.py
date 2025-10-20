@@ -25,25 +25,6 @@ class DataCollator:
         self.graph_based = graph_based
         self.graph_data = None
     
-    def get_graph_data(self, embeddings=None, idx2idn=None):
-        if embeddings is None or idx2idn is None:
-            idx2idn, embeddings = self.retriever.embeddings()
-        embeddings = torch.tensor(embeddings)
-        idn2idx = {idn: idx for idx, idn in idx2idn.items()}
-        head, tail = [], []
-        for index, idn in idx2idn.items():
-            neighbors = self.graph.neighbors(idn)
-            neighbors_idx = [idn2idx[n_idn] for n_idn in neighbors]
-            for n_idx in neighbors_idx:
-                head.append(index)
-                tail.append(n_idx)
-        self.graph_data = {
-            "data": pyg.data.Data(x=embeddings, edge_index=torch.tensor([head, tail])),
-            "idn2idx": idn2idx, 
-            "idx2idn": idx2idn
-            }
-        return self.graph_data
-    
     def add_graph_data(self, idn2idx, idx2idn, pyg_data):
         self.graph_data = {
             "idn2idx": idn2idx, 

@@ -57,7 +57,7 @@ class BasePromptLlama(LlamaPreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
     
-    def add_prompt(self):
+    def add_prompt(self, embeddings=None):
         """Initialize the prompt generator."""
         if self.prompt_config["type"] == "random":
             self.prompt_generator = RandomPromptGenerator(config=self.prompt_config)
@@ -68,7 +68,9 @@ class BasePromptLlama(LlamaPreTrainedModel):
         elif self.prompt_config["type"] == "fused":
             self.prompt_generator = FusedPromptGenerator(config=self.prompt_config)
         elif self.prompt_config["type"] == "graph_context":
-            self.prompt_generator = GraphContextPromptGenerator(config=self.prompt_config)
+            if embeddings is None:
+                raise ValueError("Need to provide label embeddings for Graph GNN")
+            self.prompt_generator = GraphContextPromptGenerator(config=self.prompt_config, embeddings=embeddings)
         else:
             raise ValueError(f"Unknown prompt type: {self.prompt_config['type']}")
         self.prompt_generator.to(self.embed_tokens.weight.device)

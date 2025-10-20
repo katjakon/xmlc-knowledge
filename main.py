@@ -4,6 +4,7 @@ import pickle
 import yaml
 
 import torch
+import pandas as pd
 import wandb
 
 from default_config import default_config
@@ -12,7 +13,7 @@ from gnd_graph import GNDGraph
 from data_collator import DataCollator
 from trainer import Trainer
 from retriever import Retriever
-from utils import init_prompt_model, load_model
+from utils import init_prompt_model, load_model, generate_graph_data
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -33,8 +34,8 @@ with open(config_path, "r") as f:
 default_config.update(config)
 config = default_config
 
+label_mapping_path = config["label_mapping_path"]
 exp_name = config["experiment_name"]
-
 output_dir = config["checkpoint_path"]
 output_dir = os.path.join(output_dir, exp_name)
 
@@ -61,10 +62,14 @@ if load_from_pretrained:
         load=keys_to_load,
     )
 else:
+    label_df = pd.read_feather(label_mapping_path)
+    label_embeddings = torch.rand((label_df.shape[0], dim))
+    label_embeddings = torch.nn.Embedding.from_pretrained(label_embeddings)
     model, tokenizer = init_prompt_model(
         model_name=model_name,
         prompt_config=config["prompt_config"],
         tune_lm_head=True,
+        embeddings=label_embeddings
     )
     model = torch.nn.DataParallel(model)
 
@@ -121,7 +126,11 @@ data_collator = DataCollator(
         graph_based=graph_based
     )
 if graph_based: 
-    data_collator.get_graph_data()
+    idn2idx, idx2idn, pyg_data = generate_graph_data(
+        label_mapping_path=label_mapping_path,
+        graph=gnd_graph
+    )
+    data_collator.add_graph_data(idn2idx=idn2idx, idx2idn=idx2idn, pyg_data=pyg_data)
     
 if dev:
     # For development, use a smaller subset of the dataset
