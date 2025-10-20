@@ -13,7 +13,7 @@ from gnd_graph import GNDGraph
 from data_collator import DataCollator
 from trainer import Trainer
 from retriever import Retriever
-from utils import init_prompt_model, load_model, generate_graph_data
+from utils import init_prompt_model, load_model, generate_graph_data, get_label_embeddings
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -31,13 +31,20 @@ num_validate = arguments.num_validate
 # Load config 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
-default_config.update(config)
+
+for k, v in default_config.items():
+    if isinstance(v, dict):
+        v.update(config[k])
+    else:
+        if k in config:
+            default_config[k] = config[k]
 config = default_config
 
 label_mapping_path = config["label_mapping_path"]
 exp_name = config["experiment_name"]
 output_dir = config["checkpoint_path"]
 output_dir = os.path.join(output_dir, exp_name)
+prompt_config = config["prompt_config"]
 
 if os.path.exists(output_dir):
     print(f"Output directory {output_dir} already exists. Please remove it or choose a different name.")
@@ -51,6 +58,7 @@ gnd_graph = pickle.load(open(gnd_path, "rb"))
 gnd_graph = GNDGraph(gnd_graph)
 
 model_name = config["model_name"]
+graph_based = "graph" in config["context"]["context_type"]
 
 if load_from_pretrained:
     # Load the model from a pretrained checkpoint
@@ -63,11 +71,19 @@ if load_from_pretrained:
     )
 else:
     label_df = pd.read_feather(label_mapping_path)
-    label_embeddings = torch.rand((label_df.shape[0], dim))
-    label_embeddings = torch.nn.Embedding.from_pretrained(label_embeddings)
+    label_embeddings = None
+    if graph_based:
+        label_embeddings = get_label_embeddings(
+            mapping_df=label_df, 
+            prompt_config=prompt_config, 
+            kind=prompt_config["kge_kind"], 
+            sentence_transformer_model=prompt_config["kge_encoder"], 
+            path=prompt_config["kge_path"], 
+            device=DEVICE
+        )
     model, tokenizer = init_prompt_model(
         model_name=model_name,
-        prompt_config=config["prompt_config"],
+        prompt_config=prompt_config,
         tune_lm_head=True,
         embeddings=label_embeddings
     )
@@ -114,7 +130,6 @@ if (
 else:
     retriever.fit(batch_size=1000)
 
-graph_based = "graph" in config["context"]["context_type"]
 data_collator = DataCollator(
         tokenizer=tokenizer,
         graph=gnd_graph,  
@@ -139,20 +154,24 @@ if dev:
 # How many parameters are in the model?
 total_model_params = 0
 num_trained_params = 0
-for p in model.parameters():
+
+for n, p in model.named_parameters():
+    if "embedding" in n:
+        print(p, p.requires_grad)
     if p.requires_grad:
         num_trained_params += p.numel()
     else:
         total_model_params += p.numel()
+
 print("Total Model Parameters: {}, Trainable Parameters: {}, Percentage {}".format(
     total_model_params, 
     num_trained_params,
     num_trained_params / (total_model_params + num_trained_params)
     )
     )
-prompt_type = config["prompt_config"]["type"]
-layer = config["prompt_config"]["at_layer"]
-num_tokens = config["prompt_config"]["num_prompt_tokens"]
+prompt_type = prompt_config["type"]
+layer = prompt_config["at_layer"]
+num_tokens = prompt_config["num_prompt_tokens"]
 
 project_name = "xmlc-knowledge-final"
 if dev:

@@ -7,6 +7,7 @@ import torch
 from torch_geometric.data import Data
 from tqdm import tqdm
 from safetensors import safe_open
+from sentence_transformers import SentenceTransformer
 
 from llama_prompt import GenerativePromptLlama
 
@@ -117,7 +118,7 @@ def init_prompt_model(model_name, prompt_config, tune_lm_head=True, embeddings=N
     if tune_lm_head: 
         for param in model.lm_head.parameters():
             param.requires_grad = True
-    model.model.add_prompt(embeddings=None)
+    model.model.add_prompt(embeddings=embeddings)
     return model, tokenizer
 
 def load_model(checkpoint_path, config, device, data_parallel=True, load=None):
@@ -231,3 +232,28 @@ def generate_graph_data(label_mapping_path, graph):
     x = torch.tensor(list(idx2idn.keys()))
     data = Data(x=x, edge_index=edge_index)
     return idn2idx, idx2idn, data
+
+def get_label_embeddings(mapping_df, prompt_config, kind="random", sentence_transformer_model=None, path=None, device=None, freeze=False):
+    kinds = {"random", "retriever", "from_file"}
+    if kind not in kinds:
+        raise ValueError(f"kind needs to be one of {kinds}. Current value: kind={kind}")
+    if kind == "random":
+        dim = prompt_config["kge_size"]
+        label_embeddings = torch.rand((label_df.shape[0], dim))
+    elif kind == "retriever":
+        if sentence_transformer_model is None:
+            raise ValueError(f"Need to provide retriever model for kind={kind}")
+        sentence_transformer_model = SentenceTransformer(sentence_transformer_model, device=device)
+        label_strings = mapping_df["strings"]
+        label_embeddings =  sentence_transformer_model.encode(
+            label_strings, 
+            batch_size=1024,
+            show_progress_bar=True,
+            convert_to_tensor=True)
+    elif kind == "from_file":
+        pass
+    with torch.inference_mode():
+        label_embeddings = torch.nn.Embedding.from_pretrained(label_embeddings, freeze=freeze)
+    return label_embeddings
+
+

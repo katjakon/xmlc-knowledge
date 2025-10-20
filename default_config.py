@@ -1,6 +1,7 @@
 
 default_config = {
 "model_name": "meta-llama/Llama-3.2-3B",
+"experiment_name": "default-name",
 "sentence_transformer_model": "BAAI/bge-m3",
 "checkpoint_path": "pt_models",
 "graph_path": "gnd/gnd.pickle",
@@ -40,6 +41,9 @@ default_config = {
     "type": "hidden_states", # Choices: "hidden_states", "random", "context" or "graph_context"
     "gnn_hidden_size": 512,
     "gnn_n_layers": 2,
-    "kge_size": 1024
+    "kge_size": 1024,
+    "kge_kind": "random",
+    "kge_path": None,
+    "kge_encoder": None,
 }
 }
