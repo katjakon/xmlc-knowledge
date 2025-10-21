@@ -156,8 +156,6 @@ total_model_params = 0
 num_trained_params = 0
 
 for n, p in model.named_parameters():
-    if "embedding" in n:
-        print(p, p.requires_grad)
     if p.requires_grad:
         num_trained_params += p.numel()
     else:

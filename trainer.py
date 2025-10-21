@@ -161,7 +161,7 @@ class Trainer:
                 track_loss.append(loss.item())
                 if global_step % log_steps == 0:
                     # get current lr
-                    lr = scheduler.get_lr()[0]
+                    lr = scheduler.get_last_lr()[0]
                     avg_loss = sum(track_loss) / len(track_loss)
                     track_loss = []
                     wandb.log({"loss": avg_loss, "learning_rate": lr, "Step": global_step})
