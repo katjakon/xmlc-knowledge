@@ -15,7 +15,7 @@ from gnd_dataset import GNDDataset
 from gnd_graph import GNDGraph
 from retriever import Retriever
 from reranker import BGEReranker
-from utils import load_model, generate_predictions, map_labels, process_output, SEP_TOKEN
+from utils import load_model, generate_predictions, map_labels, process_output, SEP_TOKEN, generate_graph_data, get_label_embeddings, load_config
 from prompt_str import SYSTEM_PROMPT, USER_PROMPT, CONTEXT_PROMPT
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -48,13 +48,13 @@ map_model = arguments.map_model
 set_seed(arguments.seed)
 
 # Load config 
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
-default_config.update(config)
-config = default_config
+config = load_config(config_path)
+prompt_config = config["prompt_config"]
 
+label_mapping_path = config["label_mapping_path"]
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
+graph_based = "graph" in config["context"]["context_type"]
     
 result_dir = os.path.join(result_dir, exp_name)
 
@@ -130,8 +130,22 @@ else:
     output_dir = config["checkpoint_path"]
     output_dir = os.path.join(output_dir, exp_name)
     checkpoint_path = os.path.join(output_dir, checkpoint, "model.safetensors")
-
-    model, tokenizer = load_model(checkpoint_path, config=config, device=DEVICE, data_parallel=True)
+    label_df = pd.read_feather(label_mapping_path)
+    label_embeddings = None
+    if graph_based:
+        label_embeddings = get_label_embeddings(
+            mapping_df=label_df, 
+            prompt_config=prompt_config, 
+            kind="random", 
+            device=DEVICE
+        )
+    model, tokenizer = load_model(
+        checkpoint_path, 
+        config=config, 
+        device=DEVICE, 
+        data_parallel=True, 
+        embeddings=label_embeddings
+        )
     retriever_model = config["sentence_transformer_model"]
     context_retriever = Retriever(
         retriever_model=retriever_model,
@@ -151,7 +165,11 @@ else:
         graph_based=graph_based
     )
     if graph_based: 
-        data_collator.get_graph_data()
+        idn2idx, idx2idn, pyg_data = generate_graph_data(
+            label_mapping_path=label_mapping_path,
+            graph=gnd_graph
+        )
+        data_collator.add_graph_data(idn2idx=idn2idx, idx2idn=idx2idn, pyg_data=pyg_data)
     
     loader = torch.utils.data.DataLoader(
         test_ds,

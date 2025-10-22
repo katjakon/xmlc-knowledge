@@ -1,4 +1,5 @@
 import re
+import yaml
 
 import networkx as nx
 import pandas as pd
@@ -9,6 +10,7 @@ from tqdm import tqdm
 from safetensors import safe_open
 from sentence_transformers import SentenceTransformer
 
+from default_config import default_config
 from llama_prompt import GenerativePromptLlama
 
 PAD_TOKEN = "<|finetune_right_pad_id|>"
@@ -121,7 +123,7 @@ def init_prompt_model(model_name, prompt_config, tune_lm_head=True, embeddings=N
     model.model.add_prompt(embeddings=embeddings)
     return model, tokenizer
 
-def load_model(checkpoint_path, config, device, data_parallel=True, load=None):
+def load_model(checkpoint_path, config, device, data_parallel=True, load=None, embeddings=None):
     """
     Load a model from a checkpoint.
 
@@ -131,13 +133,14 @@ def load_model(checkpoint_path, config, device, data_parallel=True, load=None):
         device (str): Device to load the model on, e.g., "cuda" or "cpu".
         data_parallel (bool): Whether to wrap the model in DataParallel. Default is True.
         load (list, optional): List of keys to load from the checkpoint. If None, all tensors are loaded.
+        embeddings (tensor, optional): Embeddings to use as knowledge embeddings.
     Returns:
         model (torch.nn.Module): The loaded model.
         tokenizer (transformers.PreTrainedTokenizer): The tokenizer associated with the model.
     """
     prompt_config = config["prompt_config"]
     model_name = config["model_name"]
-    model, tokenizer = init_prompt_model(model_name, prompt_config)
+    model, tokenizer = init_prompt_model(model_name, prompt_config, embeddings=embeddings)
     tensors = {}
     with safe_open(checkpoint_path, framework="pt") as f:
         for k in f.keys():
@@ -227,7 +230,7 @@ def generate_graph_data(label_mapping_path, graph):
         for n_idx in neighbors_idx:
             head.append(index)
             tail.append(n_idx)
-    edge_index = torch.tensor([head, tail])
+    edge_index = torch.tensor([head, tail], dtype=torch.int64)
     # Node features are indices for mapping to embeddings later.
     x = torch.tensor(list(idx2idn.keys()))
     data = Data(x=x, edge_index=edge_index)
@@ -239,7 +242,7 @@ def get_label_embeddings(mapping_df, prompt_config, kind="random", sentence_tran
         raise ValueError(f"kind needs to be one of {kinds}. Current value: kind={kind}")
     if kind == "random":
         dim = prompt_config["kge_size"]
-        label_embeddings = torch.rand((label_df.shape[0], dim))
+        label_embeddings = torch.rand((mapping_df.shape[0], dim))
     elif kind == "retriever":
         if sentence_transformer_model is None:
             raise ValueError(f"Need to provide retriever model for kind={kind}")
@@ -256,4 +259,16 @@ def get_label_embeddings(mapping_df, prompt_config, kind="random", sentence_tran
         label_embeddings = torch.nn.Embedding.from_pretrained(label_embeddings, freeze=freeze)
     return label_embeddings
 
+def load_config(config_path):
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    for k, v in default_config.items():
+        if isinstance(v, dict):
+            v.update(config[k])
+        else:
+            if k in config:
+                default_config[k] = config[k]
+    config = default_config
+    return config
 
