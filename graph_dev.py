@@ -1,5 +1,6 @@
 import pickle
 from gnd_graph import GNDGraph
+from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
 import torch
 from torch import Tensor
 import torch_geometric as pyg
@@ -58,9 +59,9 @@ train_docs = ds["train"]
 if subsample:
     train_docs = train_docs.select(range(100))
 title_strings = list(train_docs["title"])
-title_embeddings = retriever.retriever.encode(title_strings, batch_size=256, show_progress_bar=True)
-title_embeddings = torch.tensor(title_embeddings)
-#title_embeddings = torch.rand((len(title_strings), dim))
+# title_embeddings = retriever.retriever.encode(title_strings, batch_size=256, show_progress_bar=True)
+# title_embeddings = torch.tensor(title_embeddings)
+title_embeddings = torch.rand((len(title_strings), dim))
 for index, doc_record in tqdm(enumerate(train_docs)):
     title = doc_record["title"]
     gold_labels = doc_record["label-ids"]
@@ -79,10 +80,10 @@ data["title", "associate", "label"].edge_index = title_edge_index
 data = T.ToUndirected()(data)
 
 class Classifier(torch.nn.Module):
-    def forward(self, x_feats: Tensor, edge_label_index: Tensor) -> Tensor:
+    def forward(self, x_title: Tensor, x_label:Tensor, edge_label_index: Tensor) -> Tensor:
         # Convert node embeddings to edge-level representations:
-        edge_feat_head = x_feats[edge_label_index[0]]
-        edge_feat_tail = x_feats[edge_label_index[1]]
+        edge_feat_head = x_title[edge_label_index[0]]
+        edge_feat_tail = x_label[edge_label_index[1]]
         # Apply dot-product to get a prediction per supervision edge:
         return (edge_feat_head * edge_feat_tail).sum(dim=-1)
 
@@ -110,8 +111,12 @@ class GNN(torch.nn.Module):
         x = self.hetero_conv(x_dict, data.edge_index_dict)
         x = {k: F.relu(v) for k, v in x.items()}
         x_title = x["title"]
+        x_label = x["label"]
         title_edge_label_index = data[("title", "associate", "label")].edge_label_index
-        pred = self.classifier(x_title, title_edge_label_index)
+        pred = self.classifier( 
+            x_title=x_title,
+            x_label=x_label, 
+            edge_label_index=title_edge_label_index)
         return pred, x
 
 gnn = GNN(dim)
@@ -137,9 +142,21 @@ train_loader = LinkNeighborLoader(
     neg_sampling_ratio=2.0,
     edge_label_index=(("title", "associate", "label"), edge_label_index),
     edge_label=edge_label,
-    batch_size=32,
+    batch_size=128,
     shuffle=True,
 )
+val_edge_label_index = val_data["title", "associate", "label"].edge_label_index
+val_edge_label = val_data["title", "associate", "label"].edge_label
+val_loader = LinkNeighborLoader(
+    data=val_data,
+    num_neighbors=[20, 10],
+    neg_sampling_ratio=2.0,
+    edge_label_index=(("title", "associate", "label"), val_edge_label_index),
+    edge_label=val_edge_label,
+    batch_size=128*3,
+    shuffle=True,
+)
+
 n_epochs = 20
 lr = 0.001
 warmup_rate = 0.03
@@ -150,11 +167,12 @@ scheduler = get_linear_schedule_with_warmup(
     num_warmup_steps=int(warmup_rate* total_steps),
     num_training_steps=total_steps,
 )
-
+gnn.to(device)
 for epoch in range(n_epochs):
     total_loss = total_examples = 0
     i = 0
     for batch in tqdm(train_loader):
+        batch.to(device)
         i += 1
         optimizer.zero_grad()
         pred, x = gnn(batch)
@@ -168,3 +186,23 @@ for epoch in range(n_epochs):
         lr = scheduler.get_last_lr()[0]
         if i % 50 == 0:
             print(f"Epoch: {epoch:03d}, Loss: {total_loss / total_examples:.4f}. LR: {lr:.4f}")
+        if i % 10 == 0:
+            preds = []
+            ground_truths = []
+            for sampled_data in tqdm(val_loader):
+                with torch.no_grad():
+                    sampled_data.to(device)
+                    pred, _ = gnn(sampled_data)
+                preds.append(pred)
+                ground_truths.append(sampled_data["title", "associate", "label"].edge_label)
+            pred = torch.cat(preds, dim=0).cpu().numpy()
+            pred_binary = ( pred >= 0.5).astype(int)     
+            ground_truth = torch.cat(ground_truths, dim=0).cpu().numpy().astype(int) 
+            print(ground_truth.shape, pred.shape)  
+            auc = roc_auc_score(ground_truth, pred)
+            prec = precision_recall_fscore_support(ground_truth, pred_binary, average="binary")
+            print()
+            print(f"Validation AUC: {auc:.4f}")
+            print(f"Precision: {prec[0]:.4f}")
+            print(f"Recall: {prec[1]:.4f}")
+            print(f"F1: {prec[2]:.4f}")
