@@ -42,7 +42,7 @@ ds = GNDDataset(
     gnd_graph=gnd_graph, 
     load_from_disk=True,
 )
-subsample = False
+subsample = True
 n_epochs = 20
 lr = 0.001
 warmup_rate = 0.03
@@ -139,7 +139,9 @@ class Classifier(torch.nn.Module):
         edge_feat_head = x_feats[edge_label_index[0]]
         edge_feat_tail = x_feats[edge_label_index[1]]
         # Apply dot-product to get a prediction per supervision edge:
-        return (edge_feat_head * edge_feat_tail).sum(dim=-1)
+        dot_product = edge_feat_head * edge_feat_tail
+        result = dot_product.sum(dim=-1)
+        return result
 
 class Model(torch.nn.Module):
     def __init__(self, hidden_channels, x_size):
@@ -194,11 +196,12 @@ for epoch in range(n_epochs):
         with torch.no_grad():
             sampled_data.to(device)
             pred, _ = model(sampled_data)
+            pred = F.sigmoid(pred)
             preds.append(pred)
             ground_truths.append(sampled_data.edge_label)
     pred = torch.cat(preds, dim=0).cpu().numpy()
     pred_binary = ( pred >= 0.5).astype(int)     
-    ground_truth = torch.cat(ground_truths, dim=0).cpu().numpy().astype(int)   
+    ground_truth = torch.cat(ground_truths, dim=0).cpu().numpy().astype(int)  
     auc = roc_auc_score(ground_truth, pred)
     prec = precision_recall_fscore_support(ground_truth, pred_binary, average="binary")
     print()
