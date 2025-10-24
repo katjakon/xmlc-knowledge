@@ -1,5 +1,6 @@
 import pickle
 from gnd_graph import GNDGraph
+import pandas as pd
 from sklearn.metrics import roc_auc_score, precision_recall_fscore_support
 import torch
 from torch import Tensor
@@ -13,11 +14,15 @@ from transformers import AutoTokenizer
 from data_collator import DataCollator
 from gnd_dataset import GNDDataset
 from prompt_generators import GraphContextPromptGenerator
-from utils import PAD_TOKEN
+
+from default_config import default_config
+from utils import PAD_TOKEN, generate_graph_data, get_label_embeddings
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
 
 subsample = False
+label_mapping_path = "mapping/label_mapping.feather"
+mapping_df = pd.read_feather(label_mapping_path)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 gnd = pickle.load(open("gnd/gnd.pickle", "rb"))
 gnd = GNDGraph(gnd)
@@ -25,9 +30,12 @@ gnd = GNDGraph(gnd)
 if subsample:
     gnd = gnd.subgraph(list(gnd.nodes)[:20])
 
+idn2idx, idx2idn, data = generate_graph_data(label_mapping_path=label_mapping_path, graph=gnd)
+
 retriever = Retriever(retriever_model="distiluse-base-multilingual-cased-v1", graph=gnd) # 'BAAI/bge-m3'
-retriever.fit()
+# retriever.fit()
 dim = retriever.dim
+default_config["prompt_config"]["kge_size"] = dim
 
 data_path = "dataset"
 ds = GNDDataset(
@@ -35,12 +43,13 @@ ds = GNDDataset(
     gnd_graph=gnd, 
     load_from_disk=True,
 )
-
+embeddings = get_label_embeddings(
+    mapping_df, 
+    prompt_config=default_config["prompt_config"], 
+    kind="random"
+    )
 data = pyg.data.HeteroData()
 
-idx2idn, embeddings = retriever.embeddings()
-embeddings = torch.tensor(embeddings)
-idn2idx = {idn: idx for idx, idn in idx2idn.items()}
 head, tail = [], []
 for index, idn in idx2idn.items():
     neighbors = gnd.neighbors(idn)
@@ -59,9 +68,9 @@ train_docs = ds["train"]
 if subsample:
     train_docs = train_docs.select(range(100))
 title_strings = list(train_docs["title"])
-title_embeddings = retriever.retriever.encode(title_strings, batch_size=1024, show_progress_bar=True)
-title_embeddings = torch.tensor(title_embeddings)
-# title_embeddings = torch.rand((len(title_strings), dim))
+# title_embeddings = retriever.retriever.encode(title_strings, batch_size=1024, show_progress_bar=True)
+# title_embeddings = torch.tensor(title_embeddings)
+title_embeddings = torch.rand((len(title_strings), dim))
 for index, doc_record in tqdm(enumerate(train_docs)):
     title = doc_record["title"]
     gold_labels = doc_record["label-ids"]
@@ -82,6 +91,7 @@ data = T.ToUndirected()(data)
 class Classifier(torch.nn.Module):
 
     def __init__(self, dim):
+        super().__init__()
         self.output = torch.nn.Linear(dim, 1)
         self.sigmoid = torch.nn.Sigmoid()
 
@@ -90,12 +100,13 @@ class Classifier(torch.nn.Module):
         edge_feat_head = x_title[edge_label_index[0]]
         edge_feat_tail = x_label[edge_label_index[1]]
         # Apply dot-product to get a prediction per supervision edge:
-        dot = (edge_feat_head * edge_feat_tail).sum(dim=-1)
+        dot = (edge_feat_head * edge_feat_tail)#.sum(dim=-1)
         out = self.output(dot)
-        return out
+        return torch.squeeze(out)
+        #return (edge_feat_head * edge_feat_tail).sum(dim=-1)
 
 class GNN(torch.nn.Module):
-    def __init__(self, hidden_channels):
+    def __init__(self, hidden_channels, embeddings=None):
         super().__init__()
         self.lbl_title_conv = pyg.nn.SAGEConv(hidden_channels, hidden_channels)
         self.lbl_lbl_conv = pyg.nn.SAGEConv(hidden_channels, hidden_channels)
@@ -107,7 +118,10 @@ class GNN(torch.nn.Module):
             },
          aggr='sum'
         )
-        self.label_embed = torch.nn.Embedding(data["label"].num_nodes, hidden_channels)
+        if embeddings is None:
+            self.label_embed = torch.nn.Embedding(data["label"].num_nodes, hidden_channels)
+        else:
+            self.label_embed = embeddings
         self.classifier = Classifier(hidden_channels)
 
     def forward(self, data: pyg.data.HeteroData) -> Tensor:
@@ -126,11 +140,11 @@ class GNN(torch.nn.Module):
             edge_label_index=title_edge_label_index)
         return pred, x
 
-gnn = GNN(dim)
+gnn = GNN(dim, embeddings=embeddings)
 
 transform = T.RandomLinkSplit(
-    num_val=0.1,
-    num_test=0.1,
+    num_val=0.01,
+    num_test=0.0,
     # is_undirected=True,
     disjoint_train_ratio=0.1,
     neg_sampling_ratio=2.0,
@@ -140,7 +154,9 @@ transform = T.RandomLinkSplit(
 )
 
 train_data, val_data, test_data = transform(data)
-
+# print(train_data[("title", "associate", "label")]["edge_label"].shape)
+# print(val_data[("title", "associate", "label")]["edge_label"].shape)
+# exit()
 edge_label_index = train_data["title", "associate", "label"].edge_label_index
 edge_label = train_data["title", "associate", "label"].edge_label
 train_loader = LinkNeighborLoader(
@@ -154,7 +170,6 @@ train_loader = LinkNeighborLoader(
 )
 val_edge_label_index = val_data["title", "associate", "label"].edge_label_index
 val_edge_label = val_data["title", "associate", "label"].edge_label
-print(torch.unique(val_edge_label))
 
 val_loader = LinkNeighborLoader(
     data=val_data,
@@ -194,9 +209,8 @@ for epoch in range(n_epochs):
         total_loss += float(loss) * pred.numel()
         total_examples += pred.numel()
         lr = scheduler.get_last_lr()[0]
-        if i % 50 == 0:
-            print(f"Epoch: {epoch:03d}, Loss: {total_loss / total_examples:.4f}. LR: {lr:.4f}")
-        if i % 100 == 0:
+        if i % 500 == 0:
+            print(f"Step: {i}, Loss: {total_loss / total_examples:.4f}. LR: {lr:.4f}")
             preds = []
             ground_truths = []
             for sampled_data in tqdm(val_loader):
@@ -218,3 +232,4 @@ for epoch in range(n_epochs):
             print(f"Precision: {prec[0]:.4f}")
             print(f"Recall: {prec[1]:.4f}")
             print(f"F1: {prec[2]:.4f}")
+    print(f"Epoch: {epoch:03d}, Loss: {total_loss / total_examples:.4f}. LR: {lr:.4f}")
