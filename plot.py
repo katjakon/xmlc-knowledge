@@ -11,15 +11,15 @@ MT_METRCICS = [
     "rouge"
 ]
 MAPPED_METRICS = [
-    "precision",
-    # "precision@3",
-    # "precision@5",
-    "recall",
-    # "recall@3",
-    # "recall@5",
-    "f1",
-    # "f1@3",
-    # "f1@5",
+    "precision@1",
+    "precision@3",
+    "precision@5",
+    "recall@1",
+    "recall@3",
+    "recall@5",
+    "f1@1",
+    "f1@3",
+    "f1@5",
     # "jaccard",
     "weighted_precision",
 
@@ -27,25 +27,12 @@ MAPPED_METRICS = [
 
 lf_key = "label_frequencies"
 entity_key = "entity_types"
-similarity_key = "similarity_to_title"
+similarity_key = "similarity"
 
 eval_dir = [
-    # "results/retrieval-ft-no-neighbors",
-    # "results/retrieval-no-neighbors",
-    # "results/finetuned-retriever-partial",
-    # "results/hard-prompting-context-label-5",
-    # "results/ft-hard-prompting-context-label-5",
-    "results/prompt-tuning-baseline-full",
-    # "results/pt-txt-context-3-label",
-    "results/prompt-tuning-from_gnd",
-    # "results/pt-from_gnd_w_alt",
-    "results/prompt-tuning-baseline-small",
-    "results/pt-from_gnd_small",
-    # "results/pt-from_gnd_fused",
-    # "results/few-shot-baseline",
-    # "results/hard-prompting-baseline"
-
-
+    "results\prompt-tuning-baseline-3B",
+    "results\pt-graph-5k-2hop-with-ft-embeddings",
+    "results\pt-graph-10k-2hop-with-ft-embeddings"    
 ]
 
 hue = "experiment"  # graph-based
@@ -67,15 +54,15 @@ def get_eval_metrics(eval_file, metrics_names=None):
                 metrics.append({
                     'metric': f"{key}.{sub_key}",
                     'value': sub_value,
-                    'experiment': eval_file.split('/')[-2],
-                    "graph-based": "hop" in eval_file.split('/')[-2]
+                    'experiment': os.path.split(eval_file)[-2],
+                    "graph-based": "hop" in os.path.split(eval_file)[-2]
                 })
         else:
             metrics.append({
                 'metric': key,
                 'value': value,
-                'experiment': eval_file.split('/')[-2],
-                "graph-based": "hop" in eval_file.split('/')[-2]
+                'experiment': os.path.split(eval_file)[-2],
+                "graph-based": "hop" in os.path.split(eval_file)[-2]
             })
     return metrics
 
@@ -88,8 +75,8 @@ def get_lf_frequencies(eval_file):
                 'frequency': freq,
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
-                'experiment': eval_file.split('/')[-2],
-                "graph-based": "hop" in eval_file.split('/')[-2],
+                'experiment': os.path.split(eval_file)[-2],
+                "graph-based": "hop" in os.path.split(eval_file)[-2],
                 "name": "label frequency"
             })
     return lf_data
@@ -103,8 +90,8 @@ def get_entity_types(eval_file):
                 'entity': entity,
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
-                'experiment': eval_file.split('/')[-2],
-                "graph-based": "hop" in eval_file.split('/')[-2],
+                'experiment': os.path.split(eval_file)[-2],
+                "graph-based": "hop" in os.path.split(eval_file)[-2],
                 "name": "entity type"
             })
     return entity_data
@@ -113,12 +100,13 @@ def get_similarity_to_title(eval_file):
     similarity_data = []
     data = load_eval_data(eval_file)
     if similarity_key in data:
-        for similarity, accuracy in data[similarity_key].items():
+        for similarity, metrics_dict in data[similarity_key].items():
             similarity_data.append({
-                'similariy': similarity,
-                'accuracy': accuracy,
-                'experiment': eval_file.split('/')[-2],
-                "graph-based": "hop" in eval_file.split('/')[-2],
+                'similarity': similarity,
+                'precision': metrics_dict.get('precision', 0),
+                'recall': metrics_dict.get('recall', 0),
+                'experiment': os.path.split(eval_file)[-2],
+                "graph-based": os.path.split(eval_file)[-2],
                 "name": "similarity to title"
             })
     return similarity_data
@@ -134,7 +122,7 @@ def plot(df, x, y, hue=None, title=None, xlabel=None, ylabel=None, dir=None):
     if hue:
         plt.legend(title=hue.capitalize())
     plt.tight_layout()
-    plt.show()
+    #plt.show()
     file_name = title.replace(" ", "_").lower() if title else "plot"
     if dir:
         os.makedirs(dir, exist_ok=True)
@@ -208,8 +196,8 @@ if __name__ == "__main__":
         df_similarity = pd.DataFrame(all_similarity_data)
         plot(
             df=df_similarity,
-            x='similariy',
-            y='accuracy',
+            x='similarity',
+            y='precision',
             hue=hue,
             title='Similarity to Title Comparison',
             xlabel='Similarity',
