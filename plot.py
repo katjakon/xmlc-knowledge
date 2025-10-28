@@ -28,6 +28,7 @@ MAPPED_METRICS = [
 lf_key = "label_frequencies"
 entity_key = "entity_types"
 similarity_key = "similarity"
+genres_key = "genres"
 
 eval_dir = [
     "results\prompt-tuning-baseline-3B",
@@ -75,6 +76,7 @@ def get_lf_frequencies(eval_file):
                 'frequency': freq,
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
+                'f1': metrics_dict.get('f1', 0),
                 'experiment': os.path.split(eval_file)[-2],
                 "graph-based": "hop" in os.path.split(eval_file)[-2],
                 "name": "label frequency"
@@ -90,6 +92,7 @@ def get_entity_types(eval_file):
                 'entity': entity,
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
+                'f1': metrics_dict.get('f1', 0),
                 'experiment': os.path.split(eval_file)[-2],
                 "graph-based": "hop" in os.path.split(eval_file)[-2],
                 "name": "entity type"
@@ -105,11 +108,28 @@ def get_similarity_to_title(eval_file):
                 'similarity': similarity,
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
+                'f1': metrics_dict.get('f1', 0),
                 'experiment': os.path.split(eval_file)[-2],
                 "graph-based": os.path.split(eval_file)[-2],
                 "name": "similarity to title"
             })
     return similarity_data
+
+def get_genres(eval_file):
+    genre_data = []
+    data = load_eval_data(eval_file)
+    if genres_key in data:
+        for genre, metrics_dict in data[genres_key].items():
+            genre_data.append({
+                'genre': genre,
+                'precision': metrics_dict.get('precision', 0),
+                'recall': metrics_dict.get('recall', 0),
+                'f1': metrics_dict.get('f1', 0),
+                'experiment': os.path.split(eval_file)[-2],
+                "graph-based": os.path.split(eval_file)[-2],
+                "name": "genre"
+            })
+    return genre_data
 
 def plot(df, x, y, hue=None, title=None, xlabel=None, ylabel=None, dir=None):
     plt.figure(figsize=(16, 8))
@@ -135,6 +155,7 @@ if __name__ == "__main__":
     all_lf_data = []
     all_entity_data = []
     all_similarity_data = []
+    all_genre_data = []
 
     for eval_dir_path in eval_dir:
         eval_files = [os.path.join(eval_dir_path, f) for f in os.listdir(eval_dir_path) if f.endswith('.yaml')]
@@ -144,6 +165,7 @@ if __name__ == "__main__":
             all_lf_data.extend(get_lf_frequencies(eval_file))
             all_entity_data.extend(get_entity_types(eval_file))
             all_similarity_data.extend(get_similarity_to_title(eval_file))
+            all_genre_data.extend(get_genres(eval_file))
     if all_exact_metrics:
         df_metrics = pd.DataFrame(all_exact_metrics)
         plot(
@@ -201,6 +223,18 @@ if __name__ == "__main__":
             hue=hue,
             title='Similarity to Title Comparison',
             xlabel='Similarity',
-            ylabel='Accuracy',
+            ylabel='Precision',
+            dir=dir
+        )
+    if all_genre_data:
+        df_genre = pd.DataFrame(all_genre_data)
+        plot(
+            df=df_genre,
+            x='genre',
+            y='precision',
+            hue=hue,
+            title='Performance for Genres',
+            xlabel='Genre',
+            ylabel='Precision',
             dir=dir
         )
