@@ -5,19 +5,19 @@ import matplotlib.pyplot as plt
 
 
 SHORT_MAPPING = {
-    "0": "General, Computer Science, Information Science",
-    "1": "Philosophy and Psychology",
+    "0": "General, computer Science, information Science",
+    "1": "Philosophy and psychology",
     "2": "Religion",
-    "3": "Social Sciences",
+    "3": "Social sciences",
     "4": "Language",
     "5": "Natural sciences and mathematics",
     "6": "Technology, medicine, applied sciences",
     "7": "Arts and entertainment",
     "8": "Literature",
-    "9": "History and Geography",
+    "9": "History and geography",
     "B": "Fiction",
     "S": "Schoolbooks",
-    "K": "Children's and Young Adult Literature"
+    "K": "Children's and young adult literature"
 }
 
 def add_hsg_info(df, docid2hsg, use_label=True, hsg2label=None):
