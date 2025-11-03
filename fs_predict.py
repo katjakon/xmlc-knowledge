@@ -29,7 +29,7 @@ def few_shot_string(corpus, indices):
         FS_PROMPT.format(
             corpus[int(i)]["title"],
             "; ".join(corpus[int(i)]["label-names"]),
-        ) for i in indices[0]
+        ) for i in indices
     ]
     return fs_examples
 
@@ -105,7 +105,7 @@ train_ds = gnd_ds["train"]
 test_ds = gnd_ds["test"]
 
 if dev:
-    train_ds = train_ds.select(range(100))
+    #train_ds = train_ds.select(range(100))
     test_ds = test_ds.select(range(10))
 
 print("Loading embedding model.")
@@ -134,6 +134,14 @@ if example_type == "title": # Title means based on similarity of titles.
         200,  # M parameter for HNSW
     )
     index.add(embeddings)
+elif example_type == "label":
+    label_doc_dict = {}
+    for idx, instance in tqdm(enumerate(train_ds), desc="Create few-shot mapping..", total=train_ds.num_rows):
+        doc_idn = instance["doc_idn"]
+        for idn in instance["label-ids"]:
+            if idn not in label_doc_dict:
+                label_doc_dict[idn] = set()
+            label_doc_dict[idn].add(idx)
 
 pipe = pipeline(
         "text-generation",
@@ -149,8 +157,21 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
     if example_type == "title":
         title_emb = s_transf.encode([title])
         fs_distance, fs_indices = index.search(title_emb, n_examples)
+        fs_indices = fs_indices[0]
     elif example_type == "random":
-        fs_indices = [random.sample(range(train_ds.num_rows), k=n_examples)]
+        fs_indices = random.sample(range(train_ds.num_rows), k=n_examples)
+    elif example_type == "label":
+        label_idns = retriever.retrieve_with_neighbors(
+        texts=[title],
+        top_k=config["context"]["top_k"],
+        k=config["context"]["hops"]
+        )
+        fs_indices = []
+        for idn in label_idns[0]:
+            idn_docs = list(label_doc_dict.get(idn, []))
+            if idn_docs:
+                fs_ex = random.choice(idn_docs)
+                fs_indices.append(fs_ex)
     else:
         raise ValueError(f"{example_type} is not implemented.")
     fs_ex = few_shot_string(train_ds, fs_indices)
