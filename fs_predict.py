@@ -18,7 +18,7 @@ from gnd_graph import GNDGraph
 from gnd_dataset import GNDDataset
 from reranker import BGEReranker
 from retriever import Retriever
-from utils import process_output, map_labels
+from utils import process_output, map_labels, load_config
 from prompt_str import SYSTEM_PROMPT, USER_PROMPT, FS_PROMPT
 
 def few_shot_string(corpus, indices):
@@ -43,6 +43,7 @@ parser.add_argument("--split", type=str, help="Split to use for evaluation.", de
 parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
 parser.add_argument("--index", type=str, help="Path to the index file.")
 parser.add_argument("--mapping", type=str, help="Path to the mapping file.")
+parser.add_argument("--map_model", help="Sentence model for mapping", default="BAAI/bge-m3")
 parser.add_argument("--n_examples", type=int, help="Number of examples.", default=3)
 parser.add_argument(
     "--example-type", 
@@ -61,12 +62,12 @@ mapping_path = arguments.mapping
 example_type = arguments.example_type
 n_examples = arguments.n_examples
 dev = arguments.dev
+map_model = arguments.map_model
 
 set_seed(arguments.seed)
 
 # Load config 
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
+config = load_config(config_path)
 
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
@@ -84,7 +85,7 @@ gnd_graph = GNDGraph(gnd_graph)
 
 print("Loading retriever.")
 retriever = Retriever(
-    retriever_model=config["sentence_transformer_model"],
+    retriever_model=map_model,
     graph=gnd_graph,
     device=DEVICE,
 )
@@ -108,13 +109,13 @@ if dev:
     #train_ds = train_ds.select(range(100))
     test_ds = test_ds.select(range(10))
 
-print("Loading embedding model.")
-# Generate mapping and index to retriever few short examples.
-s_transf = SentenceTransformer(
-    config["sentence_transformer_model"]
-)
 
 if example_type == "title": # Title means based on similarity of titles.
+    # Generate mapping and index to retriever few short examples.
+    print("Loading embedding model.")
+    s_transf = SentenceTransformer(
+        config["sentence_transformer_model"]
+    )
     mapping = {}
     strings = []
     print("Embedding examples.")
@@ -135,6 +136,11 @@ if example_type == "title": # Title means based on similarity of titles.
     )
     index.add(embeddings)
 elif example_type == "label":
+    label_retriever = Retriever(
+            retriever_model=config["sentence_transformer_model"],
+            graph=gnd_graph,
+            device=DEVICE)
+    label_retriever.fit()
     label_doc_dict = {}
     for idx, instance in tqdm(enumerate(train_ds), desc="Create few-shot mapping..", total=train_ds.num_rows):
         doc_idn = instance["doc_idn"]
@@ -161,7 +167,7 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
     elif example_type == "random":
         fs_indices = random.sample(range(train_ds.num_rows), k=n_examples)
     elif example_type == "label":
-        label_idns = retriever.retrieve_with_neighbors(
+        label_idns = label_retriever.retrieve_with_neighbors(
         texts=[title],
         top_k=config["context"]["top_k"],
         k=config["context"]["hops"]

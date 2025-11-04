@@ -265,7 +265,7 @@ def load_config(config_path):
 
     for k, v in default_config.items():
         if isinstance(v, dict):
-            v.update(config[k])
+            v.update(config.get(k, dict()))
         else:
             if k in config:
                 default_config[k] = config[k]
