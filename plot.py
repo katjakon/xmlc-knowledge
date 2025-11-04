@@ -31,9 +31,9 @@ similarity_key = "similarity"
 genres_key = "genres"
 
 eval_dir = [
-    "results\prompt-tuning-baseline-3B",
-    "results\pt-graph-5k-2hop-with-ft-embeddings",
-    "results\pt-graph-10k-2hop-with-ft-embeddings"    
+    "results/prompt-tuning-baseline-3B",
+    "results/pt-graph-5k-2hop-with-ft-embeddings",
+    "results/pt-graph-10k-2hop-with-ft-embeddings"    
 ]
 
 hue = "experiment"  # graph-based
@@ -73,7 +73,7 @@ def get_lf_frequencies(eval_file):
     if lf_key in data:
         for freq, metrics_dict in data[lf_key].items():
             lf_data.append({
-                'frequency': freq,
+                'frequency': freq.lower(),
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
                 'f1': metrics_dict.get('f1', 0),
@@ -89,7 +89,7 @@ def get_entity_types(eval_file):
     if entity_key in data:
         for entity, metrics_dict in data[entity_key].items():
             entity_data.append({
-                'entity': entity,
+                'entity': entity.capitalize(),
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
                 'f1': metrics_dict.get('f1', 0),
@@ -105,12 +105,12 @@ def get_similarity_to_title(eval_file):
     if similarity_key in data:
         for similarity, metrics_dict in data[similarity_key].items():
             similarity_data.append({
-                'similarity': similarity,
+                'similarity': similarity.capitalize(),
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
                 'f1': metrics_dict.get('f1', 0),
                 'experiment': os.path.split(eval_file)[-2],
-                "graph-based": os.path.split(eval_file)[-2],
+                "graph-based": "hop" in os.path.split(eval_file)[-2],
                 "name": "similarity to title"
             })
     return similarity_data
@@ -121,12 +121,12 @@ def get_genres(eval_file):
     if genres_key in data:
         for genre, metrics_dict in data[genres_key].items():
             genre_data.append({
-                'genre': genre,
+                'genre': genre.capitalize(),
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
                 'f1': metrics_dict.get('f1', 0),
                 'experiment': os.path.split(eval_file)[-2],
-                "graph-based": os.path.split(eval_file)[-2],
+                "graph-based": "hop" in os.path.split(eval_file)[-2],
                 "name": "genre"
             })
     return genre_data
