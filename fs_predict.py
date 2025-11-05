@@ -64,6 +64,7 @@ n_examples = arguments.n_examples
 dev = arguments.dev
 map_model = arguments.map_model
 
+
 set_seed(arguments.seed)
 
 # Load config 
@@ -71,6 +72,7 @@ config = load_config(config_path)
 
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
+best = config["context"]["best_example"]
 
 result_dir = os.path.join(result_dir, exp_name)
 
@@ -176,7 +178,15 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
         for idn in label_idns[0]:
             idn_docs = list(label_doc_dict.get(idn, []))
             if idn_docs:
-                fs_ex = random.choice(idn_docs)
+                if best:
+                    fs_docs_titles = train_ds[idn_docs]["title"]
+                    fs_docs_embed = retriever.retriever.encode(fs_docs_titles)
+                    input_embed = retriever.retriever.encode([title])
+                    sim = retriever.retriever.similarity(input_embed, fs_docs_embed).squeeze()
+                    max_sim_index = torch.argmax(sim)
+                    fs_ex = idn_docs[max_sim_index] 
+                else:
+                    fs_ex = random.choice(idn_docs)
                 fs_indices.append(fs_ex)
     else:
         raise ValueError(f"{example_type} is not implemented.")
