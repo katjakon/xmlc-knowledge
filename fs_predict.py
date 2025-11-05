@@ -73,6 +73,7 @@ config = load_config(config_path)
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
 best = config["context"]["best_example"]
+print(f"Using best examples for label retrieval: {best}")
 
 result_dir = os.path.join(result_dir, exp_name)
 

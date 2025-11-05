@@ -179,3 +179,12 @@ cython_debug/
 /models
 /datasets
 /title-qm
+pt_models
+plots_pt
+plots/
+gnd/
+dataset/
+kge/
+retriever/
+search_indices/
+wandb/
