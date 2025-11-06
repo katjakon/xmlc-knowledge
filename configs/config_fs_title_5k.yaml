@@ -1,0 +1,7 @@
+model_name: meta-llama/Llama-3.2-3B-Instruct
+sentence_transformer_model: BAAI/bge-m3
+experiment_name: few-shot-5k-title-retrieval-3b
+
+context:
+  context_type: text # Choices: "text" or "graph". Use null if no context is needed.
+  top_k: 1 # How many instances to retrieve
