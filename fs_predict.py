@@ -44,7 +44,6 @@ parser.add_argument("--seed", type=int, default=42, help="Random seed for reprod
 parser.add_argument("--index", type=str, help="Path to the index file.")
 parser.add_argument("--mapping", type=str, help="Path to the mapping file.")
 parser.add_argument("--map_model", help="Sentence model for mapping", default="BAAI/bge-m3")
-parser.add_argument("--n_examples", type=int, help="Number of examples.", default=3)
 parser.add_argument(
     "--example-type", 
     type=str,
@@ -59,13 +58,13 @@ result_dir = arguments.result_dir
 split = arguments.split
 index_path = arguments.index
 mapping_path = arguments.mapping
-example_type = arguments.example_type
-n_examples = arguments.n_examples
 dev = arguments.dev
 map_model = arguments.map_model
-
+example_type = arguments.example_type
 
 set_seed(arguments.seed)
+
+print(f"Sampling examples using {example_type} strategy.")
 
 # Load config 
 config = load_config(config_path)
@@ -73,7 +72,6 @@ config = load_config(config_path)
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
 best = config["context"]["best_example"]
-print(f"Using best examples for label retrieval: {best}")
 
 result_dir = os.path.join(result_dir, exp_name)
 
@@ -109,9 +107,7 @@ train_ds = gnd_ds["train"]
 test_ds = gnd_ds["test"]
 
 if dev:
-    #train_ds = train_ds.select(range(100))
     test_ds = test_ds.select(range(10))
-
 
 if example_type == "title": # Title means based on similarity of titles.
     # Generate mapping and index to retriever few short examples.
@@ -161,6 +157,9 @@ pipe = pipeline(
 
 print("Generating predictions.")
 raw_predictions = []
+n_examples = config["context"]["top_k"]
+hops = config["context"]["hops"]
+
 for row in tqdm(test_ds, total=test_ds.num_rows):
     title = row["title"]
     if example_type == "title":
@@ -172,8 +171,8 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
     elif example_type == "label":
         label_idns = label_retriever.retrieve_with_neighbors(
         texts=[title],
-        top_k=config["context"]["top_k"],
-        k=config["context"]["hops"]
+        top_k=n_examples,
+        k=hops
         )
         fs_indices = []
         for idn in label_idns[0]:
