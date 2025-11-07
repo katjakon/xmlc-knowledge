@@ -4,12 +4,12 @@
 #SBATCH --cpus-per-task=6
 #SBATCH --mem-per-cpu=20G
 #SBATCH --gres=gpu:1 
-#SBATCH --time=07:00:00
+#SBATCH --time=02:00:00
 #SBATCH --mail-type=start,end
 #SBATCH --mail-user=katja.konermann@tu-dresden.de
-#SBATCH --job-name=fs_g_h1_seed11
-#SBATCH --output=fs_g_h1_seed11.out
-#SBATCH --error=fs_g_h1_seed11.err
+#SBATCH --job-name=hp_pred11
+#SBATCH --output=hp_pred11.out
+#SBATCH --error=hp_pred11.err
 
 module purge
 module load release/24.04  GCCcore/11.3.0
@@ -18,6 +18,6 @@ export HF_HOME=/data/cat/ws/kako402f-thesis-cat/.cache/
 source /data/cat/ws/kako402f-thesis-cat/xmlc-knowledge/env/bin/activate
 echo "Activated environment"
 cd /home/kako402f/projects/cat/kako402f-thesis-cat/xmlc-knowledge
+python predict.py --config configs/config_hp_baseline_1b.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --hard-prompt --seed 11
 
-python fs_predict.py --config configs/config_fs_ft_label_1k_1hop.yaml --result_dir results --index search_indices/label_index.pkl --mapping search_indices/label_mapping.pkl --example-type label --seed 11
 
