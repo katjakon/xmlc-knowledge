@@ -16,9 +16,10 @@ from evaluate_results.mt_metrics import gold_label_strings, bertscore_results, m
 from evaluate_results.label_frequency import add_label_freq_info
 from evaluate_results.genres import add_hsg_info, hsg_data
 from reranker import BGEReranker
+from retriever import Retriever
 from gnd_dataset import GNDDataset
 from gnd_graph import GNDGraph
-from utils import inverse_distance_weight
+from utils import inverse_distance_weight, map_labels, process_output
 
 logging.set_verbosity_error()
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -57,6 +58,9 @@ parser.add_argument("--write_reranked", type=bool, default=True, help="Whether t
 parser.add_argument("--dataset_path", help="Path to dataset", default="dataset")
 parser.add_argument("--gnd_path", help="Path to gnd file", default="gnd/gnd.pickle")
 parser.add_argument("--sentence_model", help="String that defines sentence transformer", default="BAAI/bge-m3")
+parser.add_argument("--force_remap", help="Map raw predictions again.", action="store_true", default=False)
+parser.add_argument("--index", help="Path to the index file.", default=None)
+parser.add_argument("--mapping", help="Path to the mapping file.", default=None)
 
 arguments = parser.parse_args()
 reranker_str = arguments.reranker_model
@@ -65,6 +69,9 @@ write_reranked = arguments.write_reranked
 ds_path = arguments.dataset_path
 gnd_path = arguments.gnd_path
 sentence_transformer_str = arguments.sentence_model
+force_remap = arguments.force_remap
+index = arguments.index
+mapping = arguments.mapping
 
 reranker = BGEReranker(reranker_str, device=DEVICE)
 sentence_model = SentenceTransformer(sentence_transformer_str)
@@ -87,6 +94,37 @@ full_eval_metrics = {}
 # Convert to list
 test_df["predictions"] = test_df["predictions"].apply(literal_eval)
 test_df["label-ids"] = test_df["label-ids"].apply(literal_eval)
+
+if force_remap:
+    print("Re-doing mapping step.")
+    retriever = Retriever(
+        retriever_model=sentence_transformer_str,
+        graph=gnd_graph,
+        device=DEVICE,
+    )
+    if index is None or mapping is None:
+        raise ValueError("Need mapping and index!")
+    retriever.load_search_index(
+        index_path=index,
+        mapping_path=mapping,
+    )
+    raw_predictions = test_df["raw_predictions"]
+    processed_predictions = []
+    for pred_str in raw_predictions:
+        pred_str = process_output(pred_str)
+        processed_predictions.append(pred_str)
+
+    mapped_predictions = map_labels(
+        prediction_list=processed_predictions,
+        retriever=retriever
+    )
+    reranker = BGEReranker("BAAI/bge-reranker-v2-m3", device=DEVICE)
+    test_df = reranker.rerank(
+        test_df,
+        gnd_graph,
+        bs=200
+        )
+    test_df.to_csv(pred_file, index=False)
 
 if "reranked-predictions" not in test_df.columns or "scores" not in test_df.columns:
     reranker = BGEReranker(reranker_str, device=DEVICE)

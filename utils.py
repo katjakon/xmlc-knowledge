@@ -100,8 +100,10 @@ def weighted_precision(y_true, y_pred, graph):
     return weighted_prec
 
 def process_output(text):
-    sep_tokens = r"[*,;-]"
-    text = re.split(sep_tokens, text)
+    text = text.split(SEP_TOKEN)
+    if len(text) == 1:
+        sep_tokens = r"[*,;-]"
+        text = re.split(sep_tokens, text[0])
     text = [x.strip() for x in text]
     if len(text) == 1:
         text = text[0].split(" ")
