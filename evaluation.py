@@ -5,6 +5,7 @@ import yaml
 import os
 
 import pandas as pd
+from pandas.api.types import is_string_dtype
 import torch
 from tqdm import tqdm
 from transformers import logging
@@ -73,7 +74,6 @@ force_remap = arguments.force_remap
 index = arguments.index
 mapping = arguments.mapping
 
-reranker = BGEReranker(reranker_str, device=DEVICE)
 sentence_model = SentenceTransformer(sentence_transformer_str)
 
 # Load GND graph
@@ -118,7 +118,8 @@ if force_remap:
         prediction_list=processed_predictions,
         retriever=retriever
     )
-    reranker = BGEReranker("BAAI/bge-reranker-v2-m3", device=DEVICE)
+    test_df["predictions"] = mapped_predictions
+    reranker = BGEReranker(reranker_str, device=DEVICE)
     test_df = reranker.rerank(
         test_df,
         gnd_graph,
@@ -137,7 +138,8 @@ if "reranked-predictions" not in test_df.columns or "scores" not in test_df.colu
     if write_reranked:
         test_df.to_csv(pred_file, index=False)
 else:
-    test_df["reranked-predictions"] = test_df["reranked-predictions"].apply(literal_eval)
+    if is_string_dtype(test_df["reranked-predictions"]):
+        test_df["reranked-predictions"] = test_df["reranked-predictions"].apply(literal_eval)
 
 long_dict = {
     "doc_idn": [],
