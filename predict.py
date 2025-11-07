@@ -54,7 +54,9 @@ prompt_config = config["prompt_config"]
 label_mapping_path = config["label_mapping_path"]
 exp_name = config["experiment_name"]
 model_name = config["model_name"]
-graph_based = "graph" in config["context"]["context_type"]
+graph_based = False
+if config["context"]["context_type"] is not None:
+    graph_based = "graph" in config["context"]["context_type"]
     
 result_dir = os.path.join(result_dir, exp_name)
 
