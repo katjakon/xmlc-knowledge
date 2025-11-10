@@ -18,4 +18,4 @@ source /data/cat/ws/kako402f-thesis-cat/xmlc-knowledge/env/bin/activate
 echo "Activated environment"
 cd /home/kako402f/projects/cat/kako402f-thesis-cat/xmlc-knowledge
 
-python fs_predict.py --config configs/config_fs_title_5k.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --example-type title --seed 42 
+python fs_predict.py --config configs/config_fs_title_3k.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --example-type title --seed 42 
