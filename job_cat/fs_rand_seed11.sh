@@ -5,6 +5,7 @@
 #SBATCH --mem-per-cpu=20G
 #SBATCH --gres=gpu:1 
 #SBATCH --time=03:00:00
+#SBATCH --licenses=cat 
 #SBATCH --mail-type=start,end
 #SBATCH --mail-user=katja.konermann@tu-dresden.de
 #SBATCH --job-name=fs_rand11
@@ -19,5 +20,5 @@ source /data/cat/ws/kako402f-thesis-cat/xmlc-knowledge/env/bin/activate
 echo "Activated environment"
 cd /home/kako402f/projects/cat/kako402f-thesis-cat/xmlc-knowledge
 
-python fs_predict.py --config configs/config_fs_rand_5k_3b.yaml --result_dir results --index search_indices/label_index.pkl --mapping search_indices/label_mapping.pkl --example-type random --seed 11
+python fs_predict.py --config configs/config_fs_rand_3k_3b.yaml --result_dir results --index search_indices/label_index.pkl --mapping search_indices/label_mapping.pkl --example-type random --seed 11
 

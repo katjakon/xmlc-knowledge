@@ -1,4 +1,4 @@
-model_name: meta-llama/Llama-3.1-3B-Instruct
+model_name: meta-llama/Llama-3.2-3B-Instruct
 sentence_transformer_model: KatjaK/gnd_retriever_full
 experiment_name: hard-prompting-3b-context-label-3k-2h-ft
 
