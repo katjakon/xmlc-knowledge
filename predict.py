@@ -92,6 +92,15 @@ retriever.load_search_index(
     mapping_path=mapping_path,
 )
 
+if config["context"]["context_type"] is not None:
+    retriever_model = config["sentence_transformer_model"]
+    context_retriever = Retriever(
+        retriever_model=retriever_model,
+        graph=gnd_graph,
+        device=DEVICE,
+    )
+    context_retriever.fit(batch_size=1000)
+
 if do_hard_prompt:
     raw_predictions = []
     count = 0
@@ -103,11 +112,11 @@ if do_hard_prompt:
     )
     for row in tqdm(test_ds):
         title = row["title"]
-
         if config["context"]["context_type"] is not None:
-            distance, label_idn = retriever.retrieve(
+            label_idn = context_retriever.retrieve_with_neighbors(
                 texts=[title],
-                top_k=config["context"]["top_k"]
+                top_k=config["context"]["top_k"],
+                k=config["context"]["hops"]
             )
             keywords = [gnd_graph.pref_label_name(idn) for idn in label_idn[0]]
             keywords = [k for k in keywords if k]
@@ -148,13 +157,6 @@ else:
         data_parallel=True, 
         embeddings=label_embeddings
         )
-    retriever_model = config["sentence_transformer_model"]
-    context_retriever = Retriever(
-        retriever_model=retriever_model,
-        graph=gnd_graph,
-        device=DEVICE,
-    )
-    context_retriever.fit(batch_size=1000)
     graph_based = "graph" in config["context"]["context_type"]
     data_collator = DataCollator(
         tokenizer=tokenizer,
