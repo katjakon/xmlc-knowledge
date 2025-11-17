@@ -173,12 +173,13 @@ class GraphDataCollator:
     NEIGHBORS = "Nachbarn: "
     ALT_NAMES = "Alternative Namen: "
 
-    def __init__(self, tokenizer, config, device, neighbors=True, alt_names=False) -> None:
+    def __init__(self, tokenizer, config, device, only_name=False, neighbors=True, alt_names=False) -> None:
         self.tokenizer = tokenizer
         self.config = config
         self.device = device
         self.neighbors = neighbors
         self.alt_names = alt_names
+        self.only_name = only_name
 
     def tokenize(self, batch,  max_length=55):
             
@@ -191,6 +192,8 @@ class GraphDataCollator:
                         neighbors_text = f"{SEP_TOKEN} ".join(item["neighbors"])
                         neighbors_texts = f"{self.NEIGHBORS}{neighbors_text}. "
                         txt += neighbors_texts
+                else:
+                    txt += f"{self.LABEL}: {item['label']} "
                 if self.alt_names:
                     if item["alt-names"]:
                         alt_names_text = f"{SEP_TOKEN} ".join(item["alt-names"])

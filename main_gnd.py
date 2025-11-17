@@ -10,7 +10,7 @@ from datasets import Dataset
 from gnd_graph import GNDGraph
 from data_collator import GraphDataCollator
 from trainer import Trainer
-from utils import init_prompt_model
+from utils import init_prompt_model, load_config
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -23,11 +23,9 @@ config_path = arguments.config
 dev = arguments.dev
 alt_names = arguments.alt_names
 # Load config 
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
+config = load_config(config_path)
 
 exp_name = config["experiment_name"]
-
 output_dir = config["checkpoint_path"]
 output_dir = os.path.join(output_dir, exp_name)
 
@@ -50,16 +48,18 @@ model, tokenizer = init_prompt_model(
 )
 
 model = torch.nn.DataParallel(model)
+graph_based = "graph" in config["context"]["context_type"]
 
 data_dict = {
     "label": [],
     "neighbors": [],
     "alt-names": []
 }
+
 for node in gnd_graph.nodes(data=True):
     idn, data = node
     name = gnd_graph.pref_label_name(idn)
-    neighbors = [gnd_graph.pref_label_name(node_idn) for node_idn in gnd_graph .neighbors(idn)]
+    neighbors = [gnd_graph.pref_label_name(node_idn) for node_idn in gnd_graph.neighbors(idn)]
     alt_names = gnd_graph.alt_label_names(idn)
     if neighbors or alt_names:
         data_dict["label"].append(name)
@@ -76,6 +76,7 @@ data_collator = GraphDataCollator(
     tokenizer=tokenizer,
     config=config,
     device=DEVICE,
+    neighbors=graph_based,
     alt_names=alt_names,  # Set to True if you want to include alternative names in the input
 )
 

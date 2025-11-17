@@ -13,7 +13,7 @@ from gnd_graph import GNDGraph
 from data_collator import DataCollator
 from trainer import Trainer
 from retriever import Retriever
-from utils import init_prompt_model, load_model, generate_graph_data, get_label_embeddings
+from utils import init_prompt_model, load_model, generate_graph_data, get_label_embeddings, load_config
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -29,16 +29,7 @@ dev = arguments.dev
 load_from_pretrained = arguments.load_from_pretrained
 num_validate = arguments.num_validate
 # Load config 
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
-
-for k, v in default_config.items():
-    if isinstance(v, dict):
-        v.update(config[k])
-    else:
-        if k in config:
-            default_config[k] = config[k]
-config = default_config
+config = load_config(config_path)
 
 label_mapping_path = config["label_mapping_path"]
 exp_name = config["experiment_name"]
