@@ -1,5 +1,6 @@
 model_name: meta-llama/Llama-3.2-3B
 experiment_name: prompt-tuning-gnd-only-names
+eval_generation: false
 
 context:
   context_type: "text" # Choices: "text" or "graph". Use null if no context is needed.
