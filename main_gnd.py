@@ -17,11 +17,9 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 parser = argparse.ArgumentParser(description="Train a model on the GND dataset.")
 parser.add_argument("--config", type=str, help="Path to the configuration file.")
 parser.add_argument("--dev", action="store_true", help="Run in development mode with a smaller dataset.")
-parser.add_argument("--alt_names", action="store_true", help="Include alternative names in the input.", default=False)
 arguments = parser.parse_args()
 config_path = arguments.config
 dev = arguments.dev
-alt_names = arguments.alt_names
 # Load config 
 config = load_config(config_path)
 
@@ -76,8 +74,7 @@ data_collator = GraphDataCollator(
     tokenizer=tokenizer,
     config=config,
     device=DEVICE,
-    neighbors=graph_based,
-    alt_names=alt_names,  # Set to True if you want to include alternative names in the input
+    neighbors=graph_based
 )
 
 if dev:

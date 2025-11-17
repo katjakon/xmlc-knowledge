@@ -173,13 +173,11 @@ class GraphDataCollator:
     NEIGHBORS = "Nachbarn: "
     ALT_NAMES = "Alternative Namen: "
 
-    def __init__(self, tokenizer, config, device, only_name=False, neighbors=True, alt_names=False) -> None:
+    def __init__(self, tokenizer, config, device, neighbors=True) -> None:
         self.tokenizer = tokenizer
         self.config = config
         self.device = device
         self.neighbors = neighbors
-        self.alt_names = alt_names
-        self.only_name = only_name
 
     def tokenize(self, batch,  max_length=55):
             
@@ -194,14 +192,14 @@ class GraphDataCollator:
                         txt += neighbors_texts
                 else:
                     txt += f"{self.LABEL}: {item['label']} "
-                if self.alt_names:
                     if item["alt-names"]:
                         alt_names_text = f"{SEP_TOKEN} ".join(item["alt-names"])
                         alt_names_texts = f"{self.ALT_NAMES}{alt_names_text}. "
                         txt += alt_names_texts
+                    else:
+                        txt += f"{self.LABEL}: {item['label']} "
                 txt += self.LABEL
                 texts.append(txt)
-
             labels = [item['label'] for item in batch]
 
             tokenized_inputs = self.tokenizer(
@@ -219,7 +217,6 @@ class GraphDataCollator:
             ]
 
             input_lengths = torch.tensor([len(input_id) for input_id in input_ids])
-
             # Tokenize labels
             tokenized_labels = self.tokenizer(
                 labels,

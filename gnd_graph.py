@@ -42,11 +42,11 @@ class GNDGraph(nx.DiGraph):
         node_data = self.nodes.get(node_id)
         if node_data is None:
             return []
-        alternative_names = node_data.get("alt", None)
-        if alternative_names is not None:
-            return list(alternative_names)
-        else:
-            return []
+        alternative_names = node_data.get("alt", set())
+        hidden_names = node_data.get("hidden", set())
+        alternative_names.update(hidden_names)
+        return list(alternative_names)
+
     
     def relation_type(self, head, tail):
         """
