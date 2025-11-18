@@ -49,7 +49,10 @@ gnd_graph = pickle.load(open(gnd_path, "rb"))
 gnd_graph = GNDGraph(gnd_graph)
 
 model_name = config["model_name"]
-graph_based = "graph" in config["context"]["context_type"]
+
+graph_based = False
+if config["context"]["context_type"] is not None:
+    graph_based = "graph" in config["context"]["context_type"]
 
 if load_from_pretrained:
     # Load the model from a pretrained checkpoint
