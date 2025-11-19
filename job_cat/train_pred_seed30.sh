@@ -7,9 +7,9 @@
 #SBATCH --mem-per-cpu=20G
 #SBATCH --mail-type=start,end
 #SBATCH --mail-user=katja.konermann@tu-dresden.de
-#SBATCH --job-name=pred
-#SBATCH --output=pred.out
-#SBATCH --error=pred.err
+#SBATCH --job-name=pred-seed30
+#SBATCH --output=pred-seed30.out
+#SBATCH --error=pred-seed30.err
 #SBATCH --licenses=cat
 
 module purge
@@ -19,4 +19,4 @@ export HF_HOME=/data/cat/ws/kako402f-thesis-cat/.cache/
 source /data/cat/ws/kako402f-thesis-cat/xmlc-knowledge/env/bin/activate
 cd /home/kako402f/projects/cat/kako402f-thesis-cat/xmlc-knowledge
 
-python predict.py --config configs/config_pt_from_gnd_only_names.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --seed 42
+python predict.py --config configs/config_pt_from_gnd_only_names.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --seed 30

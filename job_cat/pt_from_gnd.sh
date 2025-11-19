@@ -4,12 +4,12 @@
 #SBATCH --cpus-per-task=6
 #SBATCH --mem-per-cpu=20G
 #SBATCH --gres=gpu:1 
-#SBATCH --time=15:00:00
+#SBATCH --time=30:00:00
 #SBATCH --mail-type=start,end
 #SBATCH --mail-user=katja.konermann@tu-dresden.de
 #SBATCH --job-name=train_from
 #SBATCH --output=train_from_gnd.out
-#SBATCH --error=train_from-gnd.err
+#SBATCH --error=train_from_gnd.err
 
 module purge
 module load release/24.04  GCCcore/11.3.0
