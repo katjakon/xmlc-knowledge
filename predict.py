@@ -157,7 +157,6 @@ else:
         data_parallel=True, 
         embeddings=label_embeddings
         )
-    graph_based = "graph" in config["context"]["context_type"]
     data_collator = DataCollator(
         tokenizer=tokenizer,
         graph=gnd_graph,  
