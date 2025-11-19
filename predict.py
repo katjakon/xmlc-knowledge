@@ -92,6 +92,7 @@ retriever.load_search_index(
     mapping_path=mapping_path,
 )
 
+context_retriever = None
 if config["context"]["context_type"] is not None:
     retriever_model = config["sentence_transformer_model"]
     context_retriever = Retriever(
