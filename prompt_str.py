@@ -9,3 +9,8 @@ CONTEXT_PROMPT = """Ähnliche oder verwandte Schlagwörter könnten sein: {}."""
 FS_PROMPT = "Titel: {}. Schlagwörter: {}"
 EXAMPLE = "Beispiel: Titel: Die Entdeckung der Langsamkeit. Schlagwörter: Entdeckung; Langsamkeit; Natur; Wissenschaft; Philosophie. "
 SYSTEM_PROMPT_EXAMPLE = SYSTEM_PROMPT_SHORT + EXAMPLE
+INFO = "Relevante Information:\n"
+RELATION_MAPPING = {
+    "broader": " ist auch ",
+    "related": " ist verwandt mit "
+}

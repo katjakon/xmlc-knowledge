@@ -30,7 +30,8 @@ default_config = {
   "relation": None, # Choices: null (use all relations) "broader" or "related"
   "index_path": None,
   "mapping_path": None,
-  "best_example": False # Only for label few shot retrieval. CHooses most similar to title in set of docs associated with retrieved labels.
+  "best_example": False, # Only for label few shot retrieval. CHooses most similar to title in set of docs associated with retrieved labels.
+  "explicit_triplets": False # Use explicit triples as information when hard prompting.
 },
 
 "prompt_config": {

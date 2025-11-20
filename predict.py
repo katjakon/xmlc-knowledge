@@ -16,7 +16,7 @@ from gnd_graph import GNDGraph
 from retriever import Retriever
 from reranker import BGEReranker
 from utils import load_model, generate_predictions, map_labels, process_output, SEP_TOKEN, generate_graph_data, get_label_embeddings, load_config
-from prompt_str import SYSTEM_PROMPT, USER_PROMPT, CONTEXT_PROMPT
+from prompt_str import SYSTEM_PROMPT, USER_PROMPT, CONTEXT_PROMPT, RELATION_MAPPING, INFO
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 transformers.logging.set_verbosity_error()
@@ -57,7 +57,7 @@ model_name = config["model_name"]
 graph_based = False
 if config["context"]["context_type"] is not None:
     graph_based = "graph" in config["context"]["context_type"]
-    
+use_triplets = config["context"]["explicit_triplets"]
 result_dir = os.path.join(result_dir, exp_name)
 
 if not os.path.exists(result_dir):
@@ -102,6 +102,10 @@ if config["context"]["context_type"] is not None:
     )
     context_retriever.fit(batch_size=1000)
 
+def linearize_triplet(head, relation, tail):
+    rel_str = RELATION_MAPPING[relation]
+    return head + relation + tail + "\n"
+
 if do_hard_prompt:
     raw_predictions = []
     count = 0
@@ -119,12 +123,24 @@ if do_hard_prompt:
                 top_k=config["context"]["top_k"],
                 k=config["context"]["hops"]
             )
-            keywords = [gnd_graph.pref_label_name(idn) for idn in label_idn[0]]
-            keywords = [k for k in keywords if k]
-            keywords_str = f"{SEP_TOKEN} ".join(keywords)
-            system_prompt = SYSTEM_PROMPT + CONTEXT_PROMPT.format(keywords_str)
+            if use_triplets:
+                system_prompt = SYSTEM_PROMPT + INFO
+                subgraph = gnd_graph.subgraph(label_idn[0])
+                for node in subgraph.nodes():
+                    node_name = gnd_graph.pref_label_name(node)
+                    neighbors = subgraph.neighbors(node)
+                    for neigh in neighbors:
+                        relation = gnd_graph.relation_type(node, neigh)
+                        neigh_name = gnd_graph.pref_label_name(neigh)
+                        system_prompt += linearize_triplet(node_name, relation, neigh_name)
+            else:
+                keywords = [gnd_graph.pref_label_name(idn) for idn in label_idn[0]]
+                keywords = [k for k in keywords if k]
+                keywords_str = f"{SEP_TOKEN} ".join(keywords)
+                system_prompt = SYSTEM_PROMPT + CONTEXT_PROMPT.format(keywords_str)
         else:
             system_prompt = SYSTEM_PROMPT
+        print(system_prompt)
         messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": USER_PROMPT.format(title)},
