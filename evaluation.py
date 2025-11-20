@@ -140,6 +140,7 @@ if "reranked-predictions" not in test_df.columns or "scores" not in test_df.colu
 else:
     if is_string_dtype(test_df["reranked-predictions"]):
         test_df["reranked-predictions"] = test_df["reranked-predictions"].apply(literal_eval)
+        test_df["scores"] = test_df["scores"].apply(literal_eval)
 
 long_dict = {
     "doc_idn": [],
