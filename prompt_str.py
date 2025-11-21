@@ -11,6 +11,6 @@ EXAMPLE = "Beispiel: Titel: Die Entdeckung der Langsamkeit. Schlagwörter: Entde
 SYSTEM_PROMPT_EXAMPLE = SYSTEM_PROMPT_SHORT + EXAMPLE
 INFO = "Relevante Information:\n"
 RELATION_MAPPING = {
-    "broader": " ist auch ",
+    "broader": " ist eine Art von ",
     "related": " ist verwandt mit "
 }

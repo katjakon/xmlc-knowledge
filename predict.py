@@ -104,7 +104,7 @@ if config["context"]["context_type"] is not None:
 
 def linearize_triplet(head, relation, tail):
     rel_str = RELATION_MAPPING[relation]
-    return head + relation + tail + "\n"
+    return f"{head}{rel_str}{tail}\n"
 
 if do_hard_prompt:
     raw_predictions = []
@@ -140,7 +140,6 @@ if do_hard_prompt:
                 system_prompt = SYSTEM_PROMPT + CONTEXT_PROMPT.format(keywords_str)
         else:
             system_prompt = SYSTEM_PROMPT
-        print(system_prompt)
         messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": USER_PROMPT.format(title)},
