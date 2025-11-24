@@ -8,9 +8,9 @@
 #SBATCH --licenses=cat 
 #SBATCH --mail-type=start,end
 #SBATCH --mail-user=katja.konermann@tu-dresden.de
-#SBATCH --job-name=hp_trip
-#SBATCH --output=hp_trip.out
-#SBATCH --error=hp_trip.err
+#SBATCH --job-name=hp_trip-h2-11
+#SBATCH --output=hp_trip-h2-11.out
+#SBATCH --error=hp_trip-h2-11.err
 
 module purge
 module load release/24.04  GCCcore/11.3.0
@@ -20,6 +20,6 @@ source /data/cat/ws/kako402f-thesis/env/bin/activate
 echo "Activated environment"
 cd /home/kako402f/projects/cat/kako402f-thesis/xmlc-knowledge
 
-python predict.py --config configs/config_ft_hp_3b_triplets_5k_1h.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --hard-prompt --seed 42
+python predict.py --config configs/config_ft_hp_3b_triplets_3k_2h.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --hard-prompt --seed 30
 
 

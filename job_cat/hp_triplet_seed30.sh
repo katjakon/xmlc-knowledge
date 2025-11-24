@@ -15,11 +15,11 @@
 module purge
 module load release/24.04  GCCcore/11.3.0
 module load Python/3.10.4
-export HF_HOME=/data/cat/ws/kako402f-thesis-cat/.cache/
-source /data/cat/ws/kako402f-thesis-cat/xmlc-knowledge/env/bin/activate
+export HF_HOME=/data/cat/ws/kako402f-thesis/.cache/
+source /data/cat/ws/kako402f-thesis/env/bin/activate
 echo "Activated environment"
-cd /home/kako402f/projects/cat/kako402f-thesis-cat/xmlc-knowledge
+cd /home/kako402f/projects/cat/kako402f-thesis/xmlc-knowledge
 
-python predict.py --config configs/config_ft_hp_3b_triplets_3k_1h.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --hard-prompt --seed 30
+python predict.py --config configs/config_ft_hp_3b_triplets_5k_1h.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --hard-prompt --seed 30
 
 
