@@ -1,4 +1,5 @@
 absl-py==2.3.1
+accelerate==1.12.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.12.15
 aiosignal==1.4.0
@@ -59,7 +60,6 @@ psutil==7.1.0
 pyarrow==21.0.0
 pydantic==2.12.0
 pydantic_core==2.41.1
-pyg-lib==0.4.0+pt27cu126
 pyg-library==0.2.0
 pyparsing==3.2.5
 python-dateutil==2.9.0.post0
@@ -81,10 +81,6 @@ threadpoolctl==3.6.0
 tokenizers==0.21.4
 torch==2.7.1
 torch-geometric==2.6.1
-torch_cluster==1.6.3+pt27cu126
-torch_scatter==2.1.2+pt27cu126
-torch_sparse==0.6.18+pt27cu126
-torch_spline_conv==1.2.2+pt27cu126
 tqdm==4.67.1
 transformers==4.51.3
 triton==3.3.1
