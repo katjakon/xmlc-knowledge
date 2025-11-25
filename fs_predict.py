@@ -147,6 +147,10 @@ elif example_type == "label":
             if idn not in label_doc_dict:
                 label_doc_dict[idn] = set()
             label_doc_dict[idn].add(idx)
+    if best:
+        print("Creating train title embeddings.")
+        title_str = list(train_ds["title"])
+        train_title_embed = retriever.retriever.encode(title_str, show_progress_bar=True, batch_size=1024)
 
 pipe = pipeline(
         "text-generation",
@@ -179,9 +183,10 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
             idn_docs = list(label_doc_dict.get(idn, []))
             if idn_docs:
                 if best:
-                    fs_docs_titles = train_ds[idn_docs]["title"]
-                    fs_docs_embed = retriever.retriever.encode(fs_docs_titles)
+                    # fs_docs_titles = train_ds[idn_docs]["title"]
+                    # fs_docs_embed = retriever.retriever.encode(fs_docs_titles)
                     input_embed = retriever.retriever.encode([title])
+                    fs_docs_embed = train_title_embed[idn_docs]
                     sim = retriever.retriever.similarity(input_embed, fs_docs_embed).squeeze()
                     max_sim_index = torch.argmax(sim)
                     fs_ex = idn_docs[max_sim_index] 
