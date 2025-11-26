@@ -183,8 +183,6 @@ for row in tqdm(test_ds, total=test_ds.num_rows):
             idn_docs = list(label_doc_dict.get(idn, []))
             if idn_docs:
                 if best:
-                    # fs_docs_titles = train_ds[idn_docs]["title"]
-                    # fs_docs_embed = retriever.retriever.encode(fs_docs_titles)
                     input_embed = retriever.retriever.encode([title])
                     fs_docs_embed = train_title_embed[idn_docs]
                     sim = retriever.retriever.similarity(input_embed, fs_docs_embed).squeeze()
