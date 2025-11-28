@@ -11,15 +11,18 @@ MT_METRCICS = [
     "rouge"
 ]
 MAPPED_METRICS = [
+    # "precision",
+    # "recall",
+    # "f1",
     "precision@1",
     "precision@3",
     "precision@5",
     "recall@1",
     "recall@3",
     "recall@5",
-    "f1@1",
-    "f1@3",
-    "f1@5",
+    # "f1@1",
+    # "f1@3",
+    # "f1@5",
     # "jaccard",
     "weighted_precision",
 
@@ -31,10 +34,28 @@ similarity_key = "similarity"
 genres_key = "genres"
 
 eval_dir = [
-    "results/prompt-tuning-baseline-3B",
-    "results/pt-graph-5k-2hop-with-ft-embeddings",
-    "results/pt-graph-10k-2hop-with-ft-embeddings"    
+    "results/hard-prompting-baseline",
+    "results/hard-prompting-3b-context-label-3k-1h-ft",
+    "results/few-shot-ft-3k-1hop-label-retrieval-3b",
+    "results/few-shot-3k-title-retrieval-3b",
+
 ]
+
+exp_name_mapping = {
+    "results/hard-prompting-baseline": "Input-only",
+    "results/hard-prompting-3b-context-label-3k-1h-ft": "Label-only with 3 labels & 1-hop",
+    "results/few-shot-ft-3k-1hop-label-retrieval-3b": "Label-based, few-shot with 3 labels & 1-hop",
+    "results/few-shot-3k-title-retrieval-3b": "Title-based, few-shot with 3 instances"
+}
+
+entity_mapping = {
+    "Geografikum": "Geographic Entity", 
+    "Konferenz": "Conference", 
+    "Körperschaft": "Corporate Body",
+    "Person (individualisiert)": "Person",
+    "Sachbegriff": "Topic",
+    "Werk": "Work"
+}
 
 hue = "experiment"  # graph-based
 dir = "plots_pt"
@@ -47,6 +68,8 @@ def load_eval_data(file_path):
 def get_eval_metrics(eval_file, metrics_names=None):
     metrics = []
     data = load_eval_data(eval_file)
+    raw_name = os.path.split(eval_file)[-2]
+    exp_name = exp_name_mapping.get(raw_name, raw_name)
     for key, value in data.items():
         if metrics_names and key not in metrics_names:
             continue
@@ -55,30 +78,32 @@ def get_eval_metrics(eval_file, metrics_names=None):
                 metrics.append({
                     'metric': f"{key}.{sub_key}",
                     'value': sub_value,
-                    'experiment': os.path.split(eval_file)[-2],
-                    "graph-based": "hop" in os.path.split(eval_file)[-2]
+                    'experiment': exp_name,
+                    "graph-based": "hop" in raw_name
                 })
         else:
             metrics.append({
                 'metric': key,
                 'value': value,
-                'experiment': os.path.split(eval_file)[-2],
-                "graph-based": "hop" in os.path.split(eval_file)[-2]
+                'experiment': exp_name,
+                "graph-based": "hop" in raw_name
             })
     return metrics
 
 def get_lf_frequencies(eval_file):
     lf_data = []
     data = load_eval_data(eval_file)
+    raw_name = os.path.split(eval_file)[-2]
+    exp_name = exp_name_mapping.get(raw_name, raw_name)
     if lf_key in data:
         for freq, metrics_dict in data[lf_key].items():
             lf_data.append({
-                'frequency': freq.lower(),
+                'frequency': str(freq).lower(),
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
                 'f1': metrics_dict.get('f1', 0),
-                'experiment': os.path.split(eval_file)[-2],
-                "graph-based": "hop" in os.path.split(eval_file)[-2],
+                'experiment': exp_name,
+                "graph-based": "hop" in  raw_name,
                 "name": "label frequency"
             })
     return lf_data
@@ -86,15 +111,17 @@ def get_lf_frequencies(eval_file):
 def get_entity_types(eval_file):
     entity_data = []
     data = load_eval_data(eval_file)
+    raw_name = os.path.split(eval_file)[-2]
+    exp_name = exp_name_mapping.get(raw_name, raw_name)
     if entity_key in data:
         for entity, metrics_dict in data[entity_key].items():
             entity_data.append({
-                'entity': entity.capitalize(),
+                'entity': entity_mapping.get(entity),
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
                 'f1': metrics_dict.get('f1', 0),
-                'experiment': os.path.split(eval_file)[-2],
-                "graph-based": "hop" in os.path.split(eval_file)[-2],
+                'experiment': exp_name,
+                "graph-based": "hop" in raw_name,
                 "name": "entity type"
             })
     return entity_data
@@ -102,6 +129,8 @@ def get_entity_types(eval_file):
 def get_similarity_to_title(eval_file):
     similarity_data = []
     data = load_eval_data(eval_file)
+    raw_name = os.path.split(eval_file)[-2]
+    exp_name = exp_name_mapping.get(raw_name, raw_name)
     if similarity_key in data:
         for similarity, metrics_dict in data[similarity_key].items():
             similarity_data.append({
@@ -109,8 +138,8 @@ def get_similarity_to_title(eval_file):
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
                 'f1': metrics_dict.get('f1', 0),
-                'experiment': os.path.split(eval_file)[-2],
-                "graph-based": "hop" in os.path.split(eval_file)[-2],
+                'experiment': exp_name,
+                "graph-based": raw_name,
                 "name": "similarity to title"
             })
     return similarity_data
@@ -118,6 +147,8 @@ def get_similarity_to_title(eval_file):
 def get_genres(eval_file):
     genre_data = []
     data = load_eval_data(eval_file)
+    raw_name = os.path.split(eval_file)[-2]
+    exp_name = exp_name_mapping.get(raw_name, raw_name)
     if genres_key in data:
         for genre, metrics_dict in data[genres_key].items():
             genre_data.append({
@@ -125,8 +156,8 @@ def get_genres(eval_file):
                 'precision': metrics_dict.get('precision', 0),
                 'recall': metrics_dict.get('recall', 0),
                 'f1': metrics_dict.get('f1', 0),
-                'experiment': os.path.split(eval_file)[-2],
-                "graph-based": "hop" in os.path.split(eval_file)[-2],
+                'experiment': exp_name,
+                "graph-based": "hop" in raw_name,
                 "name": "genre"
             })
     return genre_data
