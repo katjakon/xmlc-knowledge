@@ -1,0 +1,12 @@
+
+sentence_transformer_model: "KatjaK/gnd_retriever_full"
+experiment_name: retrieval-ft-2hop
+
+context:
+  context_type: text # Choices: "text" or "graph". Use null if no context is needed.
+  top_k: 10 # How many instances to retrieve
+  hops: 2 # Also include hops in the knowledge graph from retrieved instances
+  title_wise: false # Whether to retrieve title-to-label or title-to-title
+  relation: null # Choices: null (use all relations) "broader" or "related"
+  index_path: search_indices/finetuned-label_index.pkl
+  mapping_path: search_indices/finetuned-label_mapping.pkl
