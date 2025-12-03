@@ -1,0 +1,11 @@
+
+sentence_transformer_model: BAAI/bge-m3
+experiment_name: retrieval-title-1hop
+
+context:
+  context_type: text # Choices: "text" or "graph". Use null if no context is needed.
+  top_k: 5 # How many instances to retrieve
+  hops: 1 # Also include hops in the knowledge graph from retrieved instances
+  title_wise: true # Whether to retrieve title-to-label or title-to-title
+  index_path: search_indices/title-index.pkl
+  mapping_path: search_indices/title-mapping.pkl
