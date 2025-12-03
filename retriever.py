@@ -12,7 +12,7 @@ class Retriever:
         self.mapping = None
         self.graph = graph
     
-    def retrieve(self, texts, top_k=10, batch_size=256):
+    def retrieve(self, texts, top_k=10, batch_size=256, title_wise=False):
         """
         texts: list of strings
         top_k: int
@@ -30,10 +30,11 @@ class Retriever:
         #     for i in range(len(texts)):
         #         filter_indices = [idx for idx in indices[i] if idx != i]
         #         indices[i] = filter_indices
-        # if title_wise: # Title retrieval returns lists of identifiers per index.
-        #     label_idn = [[idn for label_idn_list in map(lambda idx: self.mapping[idx], top_indices) for idn in label_idn_list] for top_indices in indices]
-        # else: # Label retrieval returns only one identifier per index.
-        label_idn = [list(map(lambda idx: self.mapping[idx], top_indices)) for top_indices in indices]
+        if title_wise: # Title retrieval returns lists of identifiers per index.
+            label_idn = [[idn for label_idn_list in map(lambda idx: self.mapping[idx], top_indices) for idn in label_idn_list] for top_indices in indices]
+        else: # Label retrieval returns only one identifier per index.
+            label_idn = [list(map(lambda idx: self.mapping[idx], top_indices)) for top_indices in indices]
+        label_idn = [list(set(idns)) for idns in label_idn]
         return distance, label_idn
     
     def fit(self, batch_size=256, with_alt_labels=False):
@@ -42,6 +43,13 @@ class Retriever:
         embeddings = self.retriever.encode(label_strings, show_progress_bar=True, batch_size=batch_size)
         self.index.add(embeddings)
         self.mapping = mapping
+        return self.index
+    
+    def fit_title_wise(self, title_strings, title_mapping, batch_size=256):
+        self.index = faiss.IndexHNSWFlat(self.dim, self.M)
+        embeddings = self.retriever.encode(title_strings, show_progress_bar=True, batch_size=batch_size)
+        self.index.add(embeddings)
+        self.mapping = title_mapping
         return self.index
     
     def embeddings(self, batch_size=256, with_alt_labels=False):
@@ -61,7 +69,7 @@ class Retriever:
             retrieved_labels_plus.append(list(extended_labels))
         return retrieved_labels_plus
     
-    def retrieve_with_neighbors(self, texts, k=2, top_k=10, batch_size=256, relation=None):
+    def retrieve_with_neighbors(self, texts, k=2, top_k=10, batch_size=256, relation=None, title_wise=False):
         """
         texts: list of strings
         k: int, of the retrieved labels also get neighbors in k hops.
@@ -74,7 +82,8 @@ class Retriever:
         _, idns = self.retrieve(
             texts=texts,
             top_k=top_k,
-            batch_size=batch_size)
+            batch_size=batch_size,
+            title_wise=title_wise)
         retrieved_labels_plus = self.get_neighbors(idns, k, relation)
         return retrieved_labels_plus
     
