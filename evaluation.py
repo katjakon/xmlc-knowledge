@@ -62,6 +62,7 @@ parser.add_argument("--sentence_model", help="String that defines sentence trans
 parser.add_argument("--force_remap", help="Map raw predictions again.", action="store_true", default=False)
 parser.add_argument("--index", help="Path to the index file.", default=None)
 parser.add_argument("--mapping", help="Path to the mapping file.", default=None)
+parser.add_argument("--compute_sim", help="Compute similariy.", action="store_true", default=True)
 
 arguments = parser.parse_args()
 reranker_str = arguments.reranker_model
@@ -73,9 +74,9 @@ sentence_transformer_str = arguments.sentence_model
 force_remap = arguments.force_remap
 index = arguments.index
 mapping = arguments.mapping
+compute_sim = arguments.compute_sim
 
 sentence_model = SentenceTransformer(sentence_transformer_str)
-
 # Load GND graph
 gnd_path = gnd_path
 gnd_graph = pickle.load(open(gnd_path, "rb"))
@@ -156,19 +157,19 @@ gold_dict = {
     "label-id": [],
     "similarity": []
 }
-
-sim_data = get_similarity_data(
-    sentence_model=sentence_model,
-    data=test_df, 
-    gnd_graph=gnd_graph, 
-    batch_size=512
-)
+if compute_sim:
+    sim_data = get_similarity_data(
+        sentence_model=sentence_model,
+        data=test_df, 
+        gnd_graph=gnd_graph, 
+        batch_size=512)
 
 for index, record in tqdm(test_df.iterrows(), total=test_df.shape[0]):
     gold_set = set(record["label-ids"])
     pred_set = set(record["reranked-predictions"])
-
-    title_embedding = sim_data["title_embeddings"][index]
+    curr_doc = record["doc_idn"]
+    if compute_sim:
+        title_embedding = sim_data["title_embeddings"][index]
     for pred_idx, (pred, score) in enumerate(zip(record["reranked-predictions"], record["scores"])):
         rank = pred_idx + 1
         long_dict["doc_idn"].append(record["doc_idn"])
@@ -182,22 +183,24 @@ for index, record in tqdm(test_df.iterrows(), total=test_df.shape[0]):
         long_dict["inverse-distance"].append(distance_score)
 
         # How similar is the predicted label to the title?
-        label_idx = sim_data["idn2idx"].get(pred)
         sim = 0
-        if label_idx is not None:
-            pred_label_embedding = sim_data["label_embeddings"][label_idx]
-            sim = sentence_model.similarity(title_embedding, pred_label_embedding).item()
+        if compute_sim:
+            label_idx = sim_data["idn2idx"].get(pred)
+            if label_idx is not None:
+                pred_label_embedding = sim_data["label_embeddings"][label_idx]
+                sim = sentence_model.similarity(title_embedding, pred_label_embedding).item()
         long_dict["similarity"].append(sim)
 
     for gold in record["label-ids"]:
         gold_dict["doc_idn"].append(record["doc_idn"])
         gold_dict["label-id"].append(gold)
         # How similar is the gold label to the title?
-        label_idx = sim_data["idn2idx"].get(gold)
         sim = 0
-        if label_idx is not None:
-            gold_label_embedding = sim_data["label_embeddings"][label_idx]
-            sim = sentence_model.similarity(title_embedding, gold_label_embedding).item()
+        if compute_sim:
+            label_idx = sim_data["idn2idx"].get(gold)
+            if label_idx is not None and compute_sim:
+                gold_label_embedding = sim_data["label_embeddings"][label_idx]
+                sim = sentence_model.similarity(title_embedding, gold_label_embedding).item()
         gold_dict["similarity"].append(sim)
 
 
