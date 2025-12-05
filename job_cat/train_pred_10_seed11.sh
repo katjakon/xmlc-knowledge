@@ -2,14 +2,14 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=6
-#SBATCH --mem-per-cpu=20G
 #SBATCH --gres=gpu:1 
-#SBATCH --time=30:00:00
+#SBATCH --time=01:30:00
+#SBATCH --mem-per-cpu=20G
 #SBATCH --mail-type=start,end
 #SBATCH --mail-user=katja.konermann@tu-dresden.de
-#SBATCH --job-name=train-10
-#SBATCH --output=train-10.out
-#SBATCH --error=train-10.err
+#SBATCH --job-name=pred_10_seed11
+#SBATCH --output=pred_10_seed11.out
+#SBATCH --error=pred_10_seed11.err
 #SBATCH --licenses=cat
 
 module purge
@@ -20,5 +20,4 @@ source /data/cat/ws/kako402f-thesis/env/bin/activate
 echo "Activated environment"
 cd /home/kako402f/projects/cat/kako402f-thesis/xmlc-knowledge
 
-python main.py --config configs/config_pt_graph_context-10-1h-ft-embed.yaml
-
+python predict.py --config configs/config_pt_graph_context-10-1h-ft-embed.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --seed 11

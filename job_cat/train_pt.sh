@@ -10,13 +10,14 @@
 #SBATCH --job-name=train
 #SBATCH --output=train.out
 #SBATCH --error=train.err
+#SBATCH --licenses=cat
 
 module purge
 module load release/24.04  GCCcore/11.3.0
 module load Python/3.10.4
-export HF_HOME=/data/cat/ws/kako402f-thesis-cat/.cache/
-source /data/cat/ws/kako402f-thesis-cat/xmlc-knowledge/env/bin/activate
+export HF_HOME=/data/cat/ws/kako402f-thesis/.cache/
+source /data/cat/ws/kako402f-thesis/env/bin/activate
 echo "Activated environment"
-cd /home/kako402f/projects/cat/kako402f-thesis-cat/xmlc-knowledge
+cd /home/kako402f/projects/cat/kako402f-thesis/xmlc-knowledge
 
-python main.py --config configs/config_pt_graph_context-5-ft-embed.yaml
+python main.py --config configs/config_pt_graph_context-5-1h-ft-embed.yaml

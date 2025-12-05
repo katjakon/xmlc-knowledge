@@ -1,23 +1,6 @@
 model_name: meta-llama/Llama-3.1-8B
 sentence_transformer_model: BAAI/bge-m3
 experiment_name: prompt-tuning-baseline-8b
-checkpoint_path: pt_models
-graph_path: gnd/gnd.pickle
-dataset_path: dataset/
-num_epochs: 2
-batch_size: 32
-learning_rate: 5e-5
-warmup_rate: 0.02
-max_grad_norm: 1.0
-eval_steps: 500
-logging_steps: 50
-save_steps: 5000
-eval_generation: true
-train_subsample_ratio: 1.0
-validate_subsample_ratio: 0.03
-sort_by_freq: true
-use_k_freq_labels: 0
-learning_rate_decay: True
 
 context:
   context_type: null # Choices: "text" or "graph". Use null if no context is needed.
