@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import yaml
 
+plt.rcParams.update({'font.size': 25})
+COLORS = sns.color_palette('colorblind')
+
 MT_METRCICS = [
     "meteor",
     "bertscore",
@@ -163,15 +166,16 @@ def get_genres(eval_file):
     return genre_data
 
 def plot(df, x, y, hue=None, title=None, xlabel=None, ylabel=None, dir=None):
-    plt.figure(figsize=(16, 8))
-    sns.barplot(x=x, y=y, hue=hue, data=df, errorbar="sd")
+    plt.figure(figsize=(22,15))
+    sns.barplot(x=x, y=y, hue=hue, data=df, errorbar="sd",  palette=COLORS)
     plt.xlabel(xlabel if xlabel else x)
     plt.ylabel(ylabel if ylabel else y)
     plt.xticks(rotation=90)
-    if title:
-        plt.title(title)
+    # if title:
+    #     plt.title(title)
     if hue:
         plt.legend(title=hue.capitalize())
+    plt.legend(bbox_to_anchor=(0,1.02, 1, 0.2), loc="lower left", mode="expand", borderaxespad=0, ncol=2)
     plt.tight_layout()
     #plt.show()
     file_name = title.replace(" ", "_").lower() if title else "plot"
@@ -187,7 +191,7 @@ if __name__ == "__main__":
     all_entity_data = []
     all_similarity_data = []
     all_genre_data = []
-
+    metric_plot = "f1"
     for eval_dir_path in eval_dir:
         eval_files = [os.path.join(eval_dir_path, f) for f in os.listdir(eval_dir_path) if f.endswith('.yaml')]
         for eval_file in eval_files:
@@ -226,11 +230,11 @@ if __name__ == "__main__":
         plot(
             df=df_lf,
             x='frequency',
-            y='precision',
+            y=metric_plot ,
             hue=hue,
             title='Label Frequencies Comparison',
             xlabel='Label Frequency',
-            ylabel='Precision',
+            ylabel=metric_plot.capitalize(),
             dir=dir
         )
     if all_entity_data:
@@ -238,11 +242,11 @@ if __name__ == "__main__":
         plot(
             df=df_entity,
             x='entity',
-            y='precision',
+            y=metric_plot ,
             hue=hue,
             title='Entity Types Comparison',
             xlabel='Entity Type',
-            ylabel='Precision',
+            ylabel=metric_plot.capitalize(),
             dir=dir
         )
     if all_similarity_data:
@@ -250,11 +254,11 @@ if __name__ == "__main__":
         plot(
             df=df_similarity,
             x='similarity',
-            y='precision',
+            y=metric_plot,
             hue=hue,
             title='Similarity to Title Comparison',
             xlabel='Similarity',
-            ylabel='Precision',
+            ylabel=metric_plot.capitalize(),
             dir=dir
         )
     if all_genre_data:
@@ -262,10 +266,10 @@ if __name__ == "__main__":
         plot(
             df=df_genre,
             x='genre',
-            y='precision',
+            y=metric_plot,
             hue=hue,
             title='Performance for Genres',
             xlabel='Genre',
-            ylabel='Precision',
+            ylabel=metric_plot.capitalize(),
             dir=dir
         )
