@@ -1,16 +1,16 @@
 model_name: meta-llama/Llama-3.1-8B
 sentence_transformer_model: BAAI/bge-m3
-experiment_name: prompt-tuning-gnd-neighbor2label-8B
-eval_generation: false
+experiment_name: prompt-tuning-from_gnd-8B
+
 
 context:
-  context_type: "graph" # Choices: "text" or "graph". Use null if no context is needed.
+  context_type: null # Choices: "text" or "graph". Use null if no context is needed.
   top_k: 0 # How many instances to retrieve
   hops: 0 # Also include hops in the knowledge graph from retrieved instances
 
 prompt_config:
-  num_prompt_tokens: 100
-  at_layer: 30
+  num_prompt_tokens: 50
+  at_layer: 25
   hidden_size: 4096
   down_project_size: 3072
   dropout: 0.1

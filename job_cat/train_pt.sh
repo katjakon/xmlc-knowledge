@@ -20,4 +20,4 @@ source /data/cat/ws/kako402f-thesis/env/bin/activate
 echo "Activated environment"
 cd /home/kako402f/projects/cat/kako402f-thesis/xmlc-knowledge
 
-python main.py --config configs/config_pt_graph_context-5-1h-ft-embed.yaml
+python main.py --config configs/config_pt_graph_context-3-1h-ft-embed.yaml 

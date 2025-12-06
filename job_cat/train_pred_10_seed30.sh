@@ -20,4 +20,4 @@ source /data/cat/ws/kako402f-thesis/env/bin/activate
 echo "Activated environment"
 cd /home/kako402f/projects/cat/kako402f-thesis/xmlc-knowledge
 
-python predict.py --config configs/config_pt_graph_context-10-1h-ft-embed.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --seed 30
+python predict.py --config configs/config_pt_graph_context-3-2h-ft-embed.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --seed 30

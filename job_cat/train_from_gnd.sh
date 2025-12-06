@@ -2,14 +2,14 @@
 #SBATCH --nodes=1
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=6
-#SBATCH --gres=gpu:1 
-#SBATCH --time=01:30:00
 #SBATCH --mem-per-cpu=20G
+#SBATCH --gres=gpu:1 
+#SBATCH --time=40:00:00
 #SBATCH --mail-type=start,end
 #SBATCH --mail-user=katja.konermann@tu-dresden.de
-#SBATCH --job-name=pred
-#SBATCH --output=pred.out
-#SBATCH --error=pred.err
+#SBATCH --job-name=train-gnd
+#SBATCH --output=train-from-gnd.out
+#SBATCH --error=train-from-gnd.err
 #SBATCH --licenses=cat
 
 module purge
@@ -20,4 +20,4 @@ source /data/cat/ws/kako402f-thesis/env/bin/activate
 echo "Activated environment"
 cd /home/kako402f/projects/cat/kako402f-thesis/xmlc-knowledge
 
-python predict.py --config configs/config_pt_graph_context-3-1h-ft-embed.yaml --result_dir results/ --index search_indices/label_index.pkl  --mapping search_indices/label_mapping.pkl --seed 42
+python main.py --config configs/config_pt_from_gnd_8b.yaml --load_from_pretrained pt_models/prompt-tuning-gnd-neighbor2label-nohidden-8B/best_model/model.safetensors

@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=6
 #SBATCH --mem-per-cpu=20G
 #SBATCH --gres=gpu:1 
-#SBATCH --time=30:00:00
+#SBATCH --time=15:00:00
 #SBATCH --mail-type=start,end
 #SBATCH --mail-user=katja.konermann@tu-dresden.de
 #SBATCH --job-name=train_gnd
