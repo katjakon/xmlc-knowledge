@@ -1,0 +1,161 @@
+weighted_precision: 0.5122229272285416
+recall: 0.37936930271154873
+precision: 0.4640491752256458
+f1: 0.3934507738138749
+n_gold: 3.5712418300653597
+n_pred: 2.6381461675579323
+recall@1: 0.2555931722598389
+precision@1: 0.5850267379679145
+f1@1: 0.324290569139054
+recall@3: 0.3679513547784492
+precision@3: 0.4799960388195682
+f1@3: 0.39284472811682625
+recall@5: 0.3792339623801299
+precision@5: 0.4643236284412755
+f1@5: 0.3935224374773389
+entity_types:
+  Geografikum:
+    recall: 0.5548947849954254
+    precision: 0.5759734093067427
+    f1: 0.565237651444548
+    n_gold: 2186
+    n_pred: 2106
+  Konferenz:
+    recall: 0.2
+    precision: 0.3333333333333333
+    f1: 0.25
+    n_gold: 10
+    n_pred: 6
+  Körperschaft:
+    recall: 0.32719836400818
+    precision: 0.35320088300220753
+    f1: 0.3397027600849257
+    n_gold: 489
+    n_pred: 453
+  Person (individualisiert):
+    recall: 0.4339229968782518
+    precision: 0.6566929133858268
+    f1: 0.5225563909774436
+    n_gold: 961
+    n_pred: 635
+  Sachbegriff:
+    recall: 0.2648889571966495
+    precision: 0.36551614442500396
+    f1: 0.3071713413683249
+    n_gold: 26026
+    n_pred: 18861
+  Werk:
+    recall: 0.1443850267379679
+    precision: 0.4153846153846154
+    f1: 0.21428571428571427
+    n_gold: 374
+    n_pred: 130
+label_frequencies:
+  x=0:
+    recall: 0.16764361078546308
+    precision: 0.1632420091324201
+    f1: 0.16541353383458648
+    n_gold: 853
+    n_pred: 876
+  x=1:
+    recall: 0.15528781793842034
+    precision: 0.2
+    f1: 0.17483044461190655
+    n_gold: 747
+    n_pred: 580
+  1<x<=10:
+    recall: 0.16126166148378498
+    precision: 0.308936170212766
+    f1: 0.21190893169877412
+    n_gold: 2251
+    n_pred: 1175
+  10<x<=100:
+    recall: 0.2228643216080402
+    precision: 0.3951882379149031
+    f1: 0.28500281147080087
+    n_gold: 7960
+    n_pred: 4489
+  100<x<=1000:
+    recall: 0.3010621908700235
+    precision: 0.40779791323448655
+    f1: 0.34639425319526074
+    n_gold: 12333
+    n_pred: 9105
+  x>1000:
+    recall: 0.4453283683141503
+    precision: 0.4403347280334728
+    f1: 0.4428174703357738
+    n_gold: 5908
+    n_pred: 5975
+similarity:
+  not similar:
+    recall: 0.18087318087318088
+    precision: 0.24033149171270718
+    f1: 0.20640569395017794
+    n_gold: 481
+    n_pred: 362
+  somewhat similar:
+    recall: 0.2173748308525034
+    precision: 0.29929944850201223
+    f1: 0.25184209701188354
+    n_gold: 18475
+    n_pred: 13418
+  similar:
+    recall: 0.4100055897149245
+    precision: 0.5415282392026578
+    f1: 0.46667727055829483
+    n_gold: 10734
+    n_pred: 8127
+  very similar:
+    recall: 0.65527950310559
+    precision: 0.7902621722846442
+    f1: 0.7164685908319185
+    n_gold: 322
+    n_pred: 267
+genres:
+  Arts and entertainment:
+    recall: 0.26182432432432434
+    precision: 0.3737942122186495
+    f1: 0.3079470198675497
+  General, computer Science, information Science:
+    recall: 0.3067754077791719
+    precision: 0.45872420262664165
+    f1: 0.3676691729323308
+  History and geography:
+    recall: 0.31936507936507935
+    precision: 0.4404553415061296
+    f1: 0.3702613176297387
+  Literature:
+    recall: 0.3033205619412516
+    precision: 0.33193570929419985
+    f1: 0.31698365031698367
+  Natural sciences and mathematics:
+    recall: 0.33967156439066554
+    precision: 0.4154334038054968
+    f1: 0.37375178316690444
+  Philosophy and psychology:
+    recall: 0.3218711276332094
+    precision: 0.42969396195202647
+    f1: 0.3680481756996103
+  Religion:
+    recall: 0.2813688212927757
+    precision: 0.4180790960451977
+    f1: 0.33636363636363636
+  Social sciences:
+    recall: 0.28214570063694266
+    precision: 0.3771953166577967
+    f1: 0.32281940332498293
+  Technology, medicine, applied sciences:
+    recall: 0.27826956025128496
+    precision: 0.3881696873132842
+    f1: 0.3241580041580041
+bertscore:
+  precision: 0.8326465987691692
+  recall: 0.8049169497410598
+  f1: 0.8173181728387403
+meteor: 0.33134722979261544
+rouge:
+  rouge1: 0.4183138666950009
+  rouge2: 0.1647777642536312
+  rougeL: 0.387668020415214
+  rougeLsum: 0.387600219337238
