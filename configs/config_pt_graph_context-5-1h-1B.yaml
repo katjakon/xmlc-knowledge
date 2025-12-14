@@ -1,0 +1,26 @@
+
+model_name: meta-llama/Llama-3.2-1B
+sentence_transformer_model: KatjaK/gnd_retriever_full
+experiment_name: pt-graph-5k-1hop-with-ft-embeddings-1B
+
+context:
+  context_type: "graph" # Choices: "text" or "graph". Use null if no context is needed.
+  top_k: 5 # How many instances to retrieve
+  hops: 1 # Also include hops in the knowledge graph from retrieved instances
+  title_wise: false # Whether to retrieve title-to-label or title-to-title
+  relation: null # Choices: null (use all relations) "broader" or "related"
+  index_path: null
+  mapping_path: null
+
+prompt_config:
+  num_prompt_tokens: 50
+  at_layer: 14
+  hidden_size: 2048
+  down_project_size: 1024
+  dropout: 0.1
+  type: "graph_context" # Choices: "hidden_states", "random","context" or "graph_context"
+  gnn_hidden_size: 512
+  gnn_n_layers: 2
+  kge_kind: "retriever"
+  kge_encoder: KatjaK/gnd_retriever_full
+  kge_size: 1024

@@ -1,0 +1,18 @@
+
+
+model_name: meta-llama/Llama-3.2-3B
+sentence_transformer_model: KatjaK/gnd_retriever_full
+experiment_name: pt-text-ft-context-5-1h-label
+
+context:
+  context_type: "text" # Choices: "text" or "graph". Use null if no context is needed.
+  top_k: 5 # How many instances to retrieve
+  hops: 1 # Also include hops in the knowledge graph from retrieved instances
+
+prompt_config:
+  num_prompt_tokens: 50
+  at_layer: 25
+  hidden_size: 3072
+  down_project_size: 1024
+  dropout: 0.1
+  type: "context" # Choices: "hidden_states", "random" or "context"
